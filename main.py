@@ -14,10 +14,7 @@ from config import BOT_TOKEN, settings
 from database.database import AsyncSessionLocal, engine, init_db
 from handlers import (
     admin,
-    admin_accounting,
     admin_event,
-    advanced,
-    checkin,
     my_tickets,
     phase_one,
     public_events,
@@ -77,23 +74,6 @@ async def notification_worker(bot: Bot) -> None:
                         row.last_error = str(exc)[:1000]
                         if row.attempts >= 5:
                             row.status = NotificationStatus.FAILED
-
-                events = (await session.execute(select(Event).where(Event.capacity > 0))).scalars().all()
-                for event in events:
-                    waiting = (await session.execute(
-                        select(WaitlistEntry)
-                        .where(WaitlistEntry.event_id == event.id, WaitlistEntry.status == WaitlistStatus.WAITING)
-                        .order_by(WaitlistEntry.id)
-                        .limit(event.capacity)
-                    )).scalars().all()
-                    for entry in waiting:
-                        try:
-                            await bot.send_message(entry.user_id, f"🎟 برای رویداد «{event.title}» ظرفیت آزاد شده است.")
-                            entry.status = WaitlistStatus.NOTIFIED
-                            entry.notified_at = now
-                            entry.expires_at = now + timedelta(minutes=30)
-                        except Exception:
-                            logger.exception("waitlist notification failed")
                 await session.commit()
         except asyncio.CancelledError:
             raise
@@ -108,10 +88,17 @@ async def main() -> None:
     storage = RedisStorage.from_url(settings.redis_url)
     dispatcher = Dispatcher(storage=storage)
 
-    # Admin router first: admins see management; regular users fall through to public events.
     for module in (
-        start, registration, admin, admin_event, public_events, user_event, user_panel,
-        admin_accounting, my_tickets, checkin, user_invoices, advanced, phase_one,
+        start,
+        registration,
+        admin,
+        admin_event,
+        public_events,
+        user_event,
+        user_panel,
+        my_tickets,
+        user_invoices,
+        phase_one,
     ):
         dispatcher.include_router(module.router)
 
