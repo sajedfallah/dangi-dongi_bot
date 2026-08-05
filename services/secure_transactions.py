@@ -16,6 +16,12 @@ def audit(session, actor_id, action, entity_type, entity_id, before=None, after=
 def _code(): return ''.join(secrets.choice(string.ascii_uppercase+string.digits) for _ in range(12))
 
 async def reserve_order(session: AsyncSession, *, user_id:int,event_id:int,total_amount:int,total_quantity:int,cart_data:dict,promo_id:int|None,expires_hours:int=5):
+    # SQLAlchemy starts a transaction automatically after SELECT queries.
+    # The checkout handler reads the event and user before calling this function,
+    # so close that read transaction before opening the atomic reservation block.
+    if session.in_transaction():
+        await session.rollback()
+
     async with session.begin():
         result=await session.execute(update(Event).where(Event.id==event_id, Event.capacity>=total_quantity).values(capacity=Event.capacity-total_quantity).returning(Event.id))
         if result.scalar_one_or_none() is None: raise ValueError('ظرفیت کافی نیست.')
