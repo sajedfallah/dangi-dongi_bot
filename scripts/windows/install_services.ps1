@@ -12,6 +12,40 @@ function Assert-Admin {
     }
 }
 
+function Remove-ServiceIfExists {
+    param(
+        [string]$ServiceName,
+        [string]$NssmExe
+    )
+
+    $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if (-not $existing) {
+        return
+    }
+
+    if ($existing.Status -ne 'Stopped') {
+        try {
+            Stop-Service -Name $ServiceName -Force -ErrorAction Stop
+            $existing.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(20))
+        }
+        catch {
+            Write-Warning "Could not stop $ServiceName cleanly: $($_.Exception.Message)"
+        }
+    }
+
+    & $NssmExe remove $ServiceName confirm | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to remove existing service $ServiceName."
+    }
+
+    for ($i = 0; $i -lt 20; $i++) {
+        if (-not (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)) {
+            break
+        }
+        Start-Sleep -Milliseconds 500
+    }
+}
+
 Assert-Admin
 
 $python = Join-Path $ProjectDir ".venv\Scripts\python.exe"
@@ -46,12 +80,11 @@ if (-not (Test-Path $nssmExe)) {
 $apiService = "DangiDongi-API"
 $botService = "DangiDongi-Bot"
 
-foreach ($service in @($botService, $apiService)) {
-    & $nssmExe stop $service confirm 2>$null | Out-Null
-    & $nssmExe remove $service confirm 2>$null | Out-Null
-}
+Remove-ServiceIfExists -ServiceName $botService -NssmExe $nssmExe
+Remove-ServiceIfExists -ServiceName $apiService -NssmExe $nssmExe
 
 & $nssmExe install $apiService $python "-m uvicorn app.main:app --host 127.0.0.1 --port 8000"
+if ($LASTEXITCODE -ne 0) { throw "Failed to install $apiService." }
 & $nssmExe set $apiService AppDirectory $ProjectDir
 & $nssmExe set $apiService Start SERVICE_AUTO_START
 & $nssmExe set $apiService AppExit Default Restart
@@ -63,6 +96,7 @@ foreach ($service in @($botService, $apiService)) {
 & $nssmExe set $apiService AppRotateBytes 10485760
 
 & $nssmExe install $botService $python "run_bot.py"
+if ($LASTEXITCODE -ne 0) { throw "Failed to install $botService." }
 & $nssmExe set $botService AppDirectory $ProjectDir
 & $nssmExe set $botService Start SERVICE_AUTO_START
 & $nssmExe set $botService AppExit Default Restart
