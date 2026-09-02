@@ -3,7 +3,7 @@
 ربات مدیریت هزینه‌های مشترک، دونگ و تسویه بین دوستان، هم‌خانه‌ها، سفرها و گروه‌های کوچک.
 
 ## وضعیت فعلی
-نسخه فعلی در فاز Telegram MVP قرار دارد. هسته مالی، RBAC، Audit Log، Migration دیتابیس، تقسیم حرفه‌ای هزینه و ویرایش هزینه داخل تلگرام پیاده‌سازی شده‌اند.
+نسخه فعلی در فاز Telegram MVP قرار دارد. هسته مالی، RBAC، Audit Log، Migration دیتابیس، تقسیم حرفه‌ای هزینه، ویرایش هزینه، تسویه دوطرفه و اعلان اعضای مرتبط پیاده‌سازی شده‌اند.
 
 ## قابلیت‌های فعلی
 - ایجاد/بازیابی خودکار کاربر تلگرام
@@ -20,14 +20,19 @@
 - تاریخچه ۲۰ هزینه آخر
 - ویرایش مبلغ، عنوان و مدل تقسیم از داخل Telegram
 - حذف هزینه با تأیید
+- اعلان ثبت/ویرایش هزینه برای اعضای مرتبط دارای Telegram ID
 - عضو عادی فقط هزینه ثبت‌شده توسط خودش را مدیریت می‌کند
 - Owner/Admin امکان مدیریت همه هزینه‌ها را دارند
 - Owner می‌تواند نقش member/admin را تغییر دهد
-- Audit Log برای ایجاد/ویرایش/حذف هزینه، تسویه، عضویت و تغییر نقش
+- Audit Log برای ایجاد/ویرایش/حذف هزینه، درخواست/تأیید/رد تسویه، عضویت و تغییر نقش
 - Audit Log فقط برای Owner/Admin قابل مشاهده است
 - محاسبه مانده خالص هر عضو
 - پیشنهاد برنامه تسویه با کاهش تعداد انتقال‌ها
-- ثبت تسویه فقط توسط خود بدهکار
+- تسویه دوطرفه: بدهکار درخواست ثبت می‌کند و طلبکار باید دریافت را تأیید کند
+- Settlementهای `pending` و `rejected` هیچ اثری روی Balance ندارند
+- فقط Settlement با وضعیت `confirmed` وارد محاسبات مانده می‌شود
+- اعلان مستقیم درخواست تسویه به طلبکار با دکمه‌های تأیید/رد
+- بخش «تسویه‌های منتظر» داخل Telegram
 - FastAPI + SQLAlchemy Async
 - SQLite برای Development و PostgreSQL برای Production
 - Alembic migrations برای ارتقای schema
@@ -39,7 +44,7 @@
 - `app/api`: API مشترک برای Telegram Bot / Mini App / Mobile
 - `app/services`: منطق مالی و Ledger مستقل از UI
 - `app/models`: مدل‌های دیتابیس
-- `app/bot`: Telegram UX، FSM و deep-link
+- `app/bot`: Telegram UX، FSM، اعلان‌ها و deep-link
 - `app/bot/security.py`: امضای لینک دعوت
 - `migrations`: نسخه‌بندی و ارتقای دیتابیس با Alembic
 
@@ -49,7 +54,7 @@
 alembic upgrade head
 ```
 
-اگر دیتابیس قدیمی قبل از Alembic داری، ابتدا Backup بگیر و مطابق نسخه موجود stamp/upgrade کن.
+Migration `0004_two_party_settlements` وضعیت `pending/confirmed/rejected` و زمان پاسخ تسویه را اضافه می‌کند. Settlementهای قدیمی هنگام ارتقا `confirmed` باقی می‌مانند تا رفتار مالی قبلی تغییر نکند.
 
 ## اجرا
 ```bash
@@ -78,10 +83,9 @@ docker compose up --build
 ```
 
 ## کارهای باقی‌مانده برای نسخه عمومی
-- تأیید دوطرفه تسویه
-- اعلان هوشمند اعضا بعد از ثبت/ویرایش هزینه
-- صفحه‌بندی تاریخچه و گزارش‌ها
-- Telegram WebApp/API authentication واقعی
+- Telegram WebApp/API authentication واقعی؛ `actor_user_id` فعلی Authentication محسوب نمی‌شود
 - Rate limiting و hardening عمومی API
-- E2E تست واقعی Telegram
+- صفحه‌بندی تاریخچه و گزارش‌های دسته‌بندی‌شده
+- E2E تست واقعی Telegram با چند حساب کاربری
+- مدیریت Notification preferences / mute
 - Telegram Mini App
