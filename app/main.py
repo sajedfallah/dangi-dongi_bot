@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.dashboard import router as dashboard_router
+from app.api.group_management import router as group_management_router
 from app.api.product import router as product_router
 from app.api.reminders_v2 import router as reminders_v2_router
 from app.api.routes import router
@@ -26,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.4.0",
+    version="0.5.0",
     lifespan=lifespan,
     docs_url="/docs" if settings.env == "development" else None,
     redoc_url=None,
@@ -36,8 +37,9 @@ app.include_router(router)
 app.include_router(dashboard_router)
 app.include_router(product_router)
 app.include_router(reminders_v2_router)
+app.include_router(group_management_router)
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": settings.app_name, "version": "0.4.0"}
+    return {"status": "ok", "service": settings.app_name, "version": "0.5.0"}
