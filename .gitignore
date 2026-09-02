@@ -1,10 +1,36 @@
-.env
-*.db
-*.sqlite*
-venv/
-.venv/
+# Python
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
 .pytest_cache/
 .mypy_cache/
-logs/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+build/
+dist/
+*.egg-info/

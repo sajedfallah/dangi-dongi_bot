@@ -1,45 +1,60 @@
-# Tikino Telegram Bot
+# Dongi — Telegram shared-expense platform (MVP)
 
-Tikino is an event ticketing Telegram bot built with Aiogram 3, PostgreSQL, Redis, SQLAlchemy 2 and Alembic.
+نسخه اولیه یک هسته قابل توسعه برای مدیریت هزینه‌های مشترک است.
 
-## Current status
+## قابلیت‌های فعلی
+- ایجاد/بازیابی کاربر تلگرام
+- ایجاد حساب/گروه
+- افزودن عضو
+- ثبت هزینه
+- تقسیم مساوی هزینه بین اعضای انتخاب‌شده
+- محاسبه مانده هر عضو
+- پیشنهاد برنامه تسویه با انتقال‌های حداقلی
+- ثبت تسویه
+- اسکلت Telegram Bot با aiogram
+- FastAPI و دیتابیس async
+- SQLite برای توسعه و PostgreSQL برای استقرار
 
-This repository is the stabilized development baseline toward **v1.0.0**. The current milestone is **v0.1.0** and includes:
-
-- user registration and admin approval;
-- event creation and public event listing;
-- ticket types, promo codes and capacity management;
-- atomic order reservation, receipt review and ticket issuing;
-- signed QR tickets and check-in;
-- refunds to wallet and full-balance withdrawal requests;
-- waitlist and scheduled notifications;
-- PostgreSQL migrations and Redis FSM storage;
-- Docker Compose development deployment.
-
-## Quick start
-
+## اجرا در حالت توسعه
 ```bash
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
+pip install -r requirements.txt
 cp .env.example .env
-# Fill BOT_TOKEN, ADMIN_IDS, POSTGRES_PASSWORD and QR_SIGNING_SECRET
-docker compose up -d --build
-docker compose logs -f bot
+uvicorn app.main:app --reload
 ```
 
-## Important commands
+API docs:
+`http://127.0.0.1:8000/docs`
 
+## اجرای بات
+توکن BotFather را در `.env` قرار بده:
+```env
+TELEGRAM_BOT_TOKEN=...
+```
+سپس:
 ```bash
-docker compose ps
-docker compose exec bot alembic current
-docker compose exec bot alembic upgrade head
-docker compose exec redis redis-cli FLUSHDB
-docker compose down
-docker compose down -v  # destroys local database data
+python -m app.bot.main
 ```
 
-## Security
+## اجرای تست
+```bash
+PYTHONPATH=. pytest -q
+```
 
-Never commit `.env`, bot tokens, database dumps, payment receipts or production secrets. Rotate any token that has previously been shared.
+## معماری
+- `app/api`: API مشترک برای Bot/Mini App/Mobile
+- `app/services`: منطق محاسبات مالی مستقل از UI
+- `app/models`: مدل دیتابیس
+- `app/bot`: رابط Telegram
 
-## Roadmap to v1.0.0
-
-See [docs/ROADMAP.md](docs/ROADMAP.md).
+## برنامه نسخه 0.2
+- لیست حساب‌های کاربر
+- دعوت عضو با لینک امن
+- ثبت کامل هزینه از داخل Bot با FSM و inline keyboard
+- ویرایش/حذف هزینه و Audit Log
+- تقسیم درصدی، سهمی و مبلغ ثابت
+- واحد پول و گردکردن قابل تنظیم
+- گزارش و تاریخچه
+- تسویه با تأیید دوطرفه
+- RBAC مدیر/عضو

@@ -1,21 +1,21 @@
 services:
-  postgres:
-    image: postgres:16-alpine
+  db:
+    image: postgres:16
     environment:
-      POSTGRES_DB: tikino
-      POSTGRES_USER: tikino
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
-    volumes: [postgres_data:/var/lib/postgresql/data]
-    healthcheck: {test: ["CMD-SHELL", "pg_isready -U tikino"], interval: 5s, timeout: 5s, retries: 10}
-  redis:
-    image: redis:7-alpine
-    command: redis-server --appendonly yes
-    volumes: [redis_data:/data]
-  bot:
+      POSTGRES_DB: dongi
+      POSTGRES_USER: dongi
+      POSTGRES_PASSWORD: dongi
+    volumes:
+      - dongi_pg:/var/lib/postgresql/data
+
+  api:
     build: .
-    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dongi:dongi@db:5432/dongi
+    ports:
+      - "8000:8000"
     depends_on:
-      postgres: {condition: service_healthy}
-      redis: {condition: service_started}
-    restart: unless-stopped
-volumes: {postgres_data: {}, redis_data: {}}
+      - db
+
+volumes:
+  dongi_pg:
