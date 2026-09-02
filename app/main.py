@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from app.api.dashboard import router as dashboard_router
 from app.api.product import router as product_router
+from app.api.reminders_v2 import router as reminders_v2_router
 from app.api.routes import router
 from app.core.config import settings
 from app.core.middleware import SecurityMiddleware
@@ -34,6 +35,7 @@ app.add_middleware(SecurityMiddleware)
 app.include_router(router)
 app.include_router(dashboard_router)
 app.include_router(product_router)
+app.include_router(reminders_v2_router)
 
 
 @app.get("/health")
