@@ -1,9 +1,9 @@
-# Dongi — Telegram shared-expense platform
+# dangi-dongi | دنگی - دونگی
 
 ربات مدیریت هزینه‌های مشترک، دونگ و تسویه بین دوستان، هم‌خانه‌ها، سفرها و گروه‌های کوچک.
 
 ## وضعیت فعلی
-نسخه فعلی در فاز Telegram MVP قرار دارد و جریان اصلی استفاده از داخل تلگرام پیاده‌سازی شده است. لایه RBAC، Audit Log، حذف کنترل‌شده هزینه و Migration رسمی دیتابیس نیز اضافه شده‌اند.
+نسخه فعلی در فاز Telegram MVP قرار دارد. هسته مالی، RBAC، Audit Log، Migration دیتابیس، تقسیم حرفه‌ای هزینه و ویرایش هزینه داخل تلگرام پیاده‌سازی شده‌اند.
 
 ## قابلیت‌های فعلی
 - ایجاد/بازیابی خودکار کاربر تلگرام
@@ -15,12 +15,13 @@
 - ثبت مالک واقعی رکورد هزینه (`created_by_user_id`)
 - پشتیبانی از اعداد فارسی/عربی/لاتین
 - انتخاب پرداخت‌کننده و شرکت‌کنندگان هزینه
-- تقسیم مساوی با مدیریت دقیق اعشار
+- چهار مدل تقسیم هزینه: مساوی، درصدی، سهمی/وزنی و مبلغ ثابت
+- کنترل جمع دقیق سهم‌ها و مدیریت rounding
 - تاریخچه ۲۰ هزینه آخر
-- حذف هزینه با تأیید از داخل Telegram
+- ویرایش مبلغ، عنوان و مدل تقسیم از داخل Telegram
+- حذف هزینه با تأیید
 - عضو عادی فقط هزینه ثبت‌شده توسط خودش را مدیریت می‌کند
 - Owner/Admin امکان مدیریت همه هزینه‌ها را دارند
-- API ویرایش کامل هزینه با محاسبه مجدد سهم‌ها
 - Owner می‌تواند نقش member/admin را تغییر دهد
 - Audit Log برای ایجاد/ویرایش/حذف هزینه، تسویه، عضویت و تغییر نقش
 - Audit Log فقط برای Owner/Admin قابل مشاهده است
@@ -42,43 +43,28 @@
 - `app/bot/security.py`: امضای لینک دعوت
 - `migrations`: نسخه‌بندی و ارتقای دیتابیس با Alembic
 
-## اجرای محلی
+## Migration
+برای دیتابیس تازه یا ارتقای schema:
+```bash
+alembic upgrade head
+```
+
+اگر دیتابیس قدیمی قبل از Alembic داری، ابتدا Backup بگیر و مطابق نسخه موجود stamp/upgrade کن.
+
+## اجرا
 ```bash
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
 pip install -r requirements.txt
 cp .env.example .env
-```
-
-در `.env` حداقل این مقادیر را تنظیم کن:
-```env
-TELEGRAM_BOT_TOKEN=YOUR_BOTFATHER_TOKEN
-APP_SECRET_KEY=USE_A_LONG_RANDOM_SECRET
-```
-
-برای دیتابیس تازه:
-```bash
 alembic upgrade head
-```
-
-اگر یک دیتابیس قدیمی v0.1 داری که قبل از Alembic ساخته شده، ابتدا از آن Backup بگیر، سپس وضعیت آن را روی migration اولیه stamp کن و ارتقا بده:
-```bash
-alembic stamp 0001_initial
-alembic upgrade head
-```
-
-Backend:
-```bash
 uvicorn app.main:app --reload
 ```
 
-Telegram Bot:
+برای Bot:
 ```bash
 python -m app.bot.main
 ```
-
-API docs:
-`http://127.0.0.1:8000/docs`
 
 ## تست
 ```bash
@@ -86,21 +72,16 @@ PYTHONPATH=. pytest -q
 python -m compileall -q app tests migrations
 ```
 
-## اجرای Docker
-Docker قبل از اجرای API به‌صورت خودکار `alembic upgrade head` را اجرا می‌کند.
-
+## Docker
 ```bash
 docker compose up --build
 ```
 
 ## کارهای باقی‌مانده برای نسخه عمومی
-- UI ویرایش هزینه داخل خود Telegram Bot
-- تقسیم نامساوی: درصدی، سهمی و مبلغ ثابت
 - تأیید دوطرفه تسویه
-- اعلان هوشمند اعضا پس از ثبت/ویرایش هزینه
-- صفحه‌بندی تاریخچه
-- دسته‌بندی و گزارش هزینه
-- Telegram WebApp/API authentication واقعی؛ `actor_user_id` فعلی جای Authentication را نمی‌گیرد
+- اعلان هوشمند اعضا بعد از ثبت/ویرایش هزینه
+- صفحه‌بندی تاریخچه و گزارش‌ها
+- Telegram WebApp/API authentication واقعی
 - Rate limiting و hardening عمومی API
 - E2E تست واقعی Telegram
 - Telegram Mini App
