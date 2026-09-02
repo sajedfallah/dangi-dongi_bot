@@ -3,31 +3,35 @@
 ربات مدیریت هزینه‌های مشترک، دونگ و تسویه بین دوستان، هم‌خانه‌ها، سفرها و گروه‌های کوچک.
 
 ## وضعیت فعلی
-نسخه فعلی وارد فاز Telegram MVP شده و جریان اصلی استفاده از داخل تلگرام پیاده‌سازی شده است.
+نسخه فعلی در فاز Telegram MVP قرار دارد و جریان اصلی استفاده از داخل تلگرام پیاده‌سازی شده است. لایه RBAC، Audit Log، حذف کنترل‌شده هزینه و Migration رسمی دیتابیس نیز اضافه شده‌اند.
 
 ## قابلیت‌های فعلی
 - ایجاد/بازیابی خودکار کاربر تلگرام
 - ساخت حساب مشترک با واحد تومان (IRT)
-- نمایش «حساب‌های من»
-- ورود به هر حساب از منوی Inline
-- لینک دعوت امضاشده برای جلوگیری از دستکاری شناسه حساب
-- عضویت مستقیم از Telegram deep-link
-- نمایش اعضای حساب
+- نمایش «حساب‌های من» و ورود به حساب
+- لینک دعوت امضاشده و عضویت با Telegram deep-link
+- نمایش اعضا و نقش‌های owner/admin/member
 - ثبت هزینه مرحله‌ای با FSM
-- پشتیبانی از اعداد فارسی/عربی/لاتین در مبلغ
-- انتخاب پرداخت‌کننده از بین اعضا
-- انتخاب چندنفره شرکت‌کنندگان در هر هزینه
+- ثبت مالک واقعی رکورد هزینه (`created_by_user_id`)
+- پشتیبانی از اعداد فارسی/عربی/لاتین
+- انتخاب پرداخت‌کننده و شرکت‌کنندگان هزینه
 - تقسیم مساوی با مدیریت دقیق اعشار
 - تاریخچه ۲۰ هزینه آخر
+- حذف هزینه با تأیید از داخل Telegram
+- عضو عادی فقط هزینه ثبت‌شده توسط خودش را مدیریت می‌کند
+- Owner/Admin امکان مدیریت همه هزینه‌ها را دارند
+- API ویرایش کامل هزینه با محاسبه مجدد سهم‌ها
+- Owner می‌تواند نقش member/admin را تغییر دهد
+- Audit Log برای ایجاد/ویرایش/حذف هزینه، تسویه، عضویت و تغییر نقش
+- Audit Log فقط برای Owner/Admin قابل مشاهده است
 - محاسبه مانده خالص هر عضو
-- نمایش طلبکار/بدهکار
 - پیشنهاد برنامه تسویه با کاهش تعداد انتقال‌ها
-- ثبت تسویه توسط خود بدهکار
-- کنترل دسترسی بات به حساب‌های عضو
+- ثبت تسویه فقط توسط خود بدهکار
 - FastAPI + SQLAlchemy Async
 - SQLite برای Development و PostgreSQL برای Production
+- Alembic migrations برای ارتقای schema
 - Docker / Docker Compose
-- تست Unit برای Ledger و لینک دعوت
+- Unit + Integration tests
 - GitHub Actions CI برای compile-check و pytest
 
 ## معماری
@@ -36,6 +40,7 @@
 - `app/models`: مدل‌های دیتابیس
 - `app/bot`: Telegram UX، FSM و deep-link
 - `app/bot/security.py`: امضای لینک دعوت
+- `migrations`: نسخه‌بندی و ارتقای دیتابیس با Alembic
 
 ## اجرای محلی
 ```bash
@@ -49,6 +54,17 @@ cp .env.example .env
 ```env
 TELEGRAM_BOT_TOKEN=YOUR_BOTFATHER_TOKEN
 APP_SECRET_KEY=USE_A_LONG_RANDOM_SECRET
+```
+
+برای دیتابیس تازه:
+```bash
+alembic upgrade head
+```
+
+اگر یک دیتابیس قدیمی v0.1 داری که قبل از Alembic ساخته شده، ابتدا از آن Backup بگیر، سپس وضعیت آن را روی migration اولیه stamp کن و ارتقا بده:
+```bash
+alembic stamp 0001_initial
+alembic upgrade head
 ```
 
 Backend:
@@ -67,24 +83,24 @@ API docs:
 ## تست
 ```bash
 PYTHONPATH=. pytest -q
-python -m compileall -q app tests
+python -m compileall -q app tests migrations
 ```
 
 ## اجرای Docker
+Docker قبل از اجرای API به‌صورت خودکار `alembic upgrade head` را اجرا می‌کند.
+
 ```bash
 docker compose up --build
 ```
 
 ## کارهای باقی‌مانده برای نسخه عمومی
-- ویرایش/حذف هزینه + Audit Log
-- نقش‌ها و Permission کامل owner/admin/member
+- UI ویرایش هزینه داخل خود Telegram Bot
 - تقسیم نامساوی: درصدی، سهمی و مبلغ ثابت
 - تأیید دوطرفه تسویه
 - اعلان هوشمند اعضا پس از ثبت/ویرایش هزینه
 - صفحه‌بندی تاریخچه
 - دسته‌بندی و گزارش هزینه
-- Migration رسمی با Alembic
-- API authentication/Telegram WebApp auth
+- Telegram WebApp/API authentication واقعی؛ `actor_user_id` فعلی جای Authentication را نمی‌گیرد
 - Rate limiting و hardening عمومی API
-- تست Integration و E2E
+- E2E تست واقعی Telegram
 - Telegram Mini App
