@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -12,6 +10,8 @@ from app.db.session import get_db
 from app.models.entities import AuditLog, Group, GroupMember, Settlement, User
 
 router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
+
+ROLE_ICONS = {"owner": "👑", "admin": "🛡", "member": "👤"}
 
 
 class DashboardGroupCreate(BaseModel):
@@ -38,7 +38,8 @@ async def dashboard_groups(user_id: int, archived: bool = False, db: AsyncSessio
     return [
         {
             "id": group.id,
-            "name": group.name,
+            "name": f"{ROLE_ICONS.get(membership.role, '👤')} {group.name}",
+            "raw_name": group.name,
             "currency": group.currency,
             "owner_user_id": group.owner_user_id,
             "role": membership.role,
@@ -66,6 +67,8 @@ async def dashboard_summary(user_id: int, db: AsyncSession = Depends(get_db)):
         "free_owned_group_limit": settings.free_owned_group_limit,
         "can_create_free_group": owned_active < settings.free_owned_group_limit,
         "remaining_free_groups": max(0, settings.free_owned_group_limit - owned_active),
+        "upgrade_required_for_next_owned_group": owned_active >= settings.free_owned_group_limit,
+        "billing_enforced": False,
     }
 
 
@@ -80,11 +83,10 @@ async def create_dashboard_group(payload: DashboardGroupCreate, db: AsyncSession
             Group.is_archived.is_(False),
         )
     )).scalar_one())
-    if owned_active >= settings.free_owned_group_limit:
-        raise HTTPException(
-            402,
-            f"free plan allows {settings.free_owned_group_limit} active owned groups; upgrade is required",
-        )
+    # During beta we track the free-plan boundary but do not block creation until
+    # billing/entitlements are implemented. Membership in other users' groups never
+    # counts against this limit.
+    requires_upgrade = owned_active >= settings.free_owned_group_limit
     group = Group(
         name=payload.name,
         owner_user_id=payload.owner_user_id,
@@ -100,7 +102,7 @@ async def create_dashboard_group(payload: DashboardGroupCreate, db: AsyncSession
         action="group.created",
         entity_type="group",
         entity_id=group.id,
-        details=f'{{"name": "{group.name}"}}',
+        details=f'{{"name": "{group.name}", "requires_upgrade": {str(requires_upgrade).lower()}}}',
     ))
     await db.commit()
     await db.refresh(group)
@@ -110,6 +112,8 @@ async def create_dashboard_group(payload: DashboardGroupCreate, db: AsyncSession
         "currency": group.currency,
         "owner_user_id": group.owner_user_id,
         "is_archived": group.is_archived,
+        "requires_upgrade": requires_upgrade,
+        "billing_enforced": False,
     }
 
 
@@ -156,7 +160,7 @@ async def dashboard_notifications(user_id: int, limit: int = 30, db: AsyncSessio
         .order_by(Settlement.created_at.desc())
         .limit(safe_limit)
     )).scalars().all()
-    notifications = [
+    return [
         {
             "type": "settlement.pending",
             "group_id": item.group_id,
@@ -169,4 +173,3 @@ async def dashboard_notifications(user_id: int, limit: int = 30, db: AsyncSessio
         }
         for item in pending
     ]
-    return notifications
