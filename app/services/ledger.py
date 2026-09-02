@@ -187,7 +187,10 @@ async def calculate_balances(session: AsyncSession, group_id: int) -> dict[int, 
             balances[share.user_id] = q(balances.get(share.user_id, Decimal("0")) - share.amount)
 
     settlements = (await session.execute(
-        select(Settlement).where(Settlement.group_id == group_id)
+        select(Settlement).where(
+            Settlement.group_id == group_id,
+            Settlement.status == "confirmed",
+        )
     )).scalars().all()
     for st in settlements:
         balances[st.from_user_id] = q(balances.get(st.from_user_id, Decimal("0")) + st.amount)
