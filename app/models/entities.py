@@ -107,6 +107,7 @@ class DebtReminderState(Base):
     debtor_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     creditor_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     last_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     last_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
