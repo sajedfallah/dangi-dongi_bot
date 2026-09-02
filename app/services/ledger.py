@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import json
 from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy import delete, select
@@ -8,27 +10,79 @@ from sqlalchemy.orm import selectinload
 from app.models.entities import Expense, ExpenseShare, GroupMember, Settlement
 
 CENT = Decimal("0.01")
+HUNDRED = Decimal("100")
 
 
 def q(value: Decimal) -> Decimal:
     return value.quantize(CENT, rounding=ROUND_HALF_UP)
 
 
-def split_equal(amount: Decimal, participant_ids: list[int]) -> dict[int, Decimal]:
-    if not participant_ids:
-        raise ValueError("participant list cannot be empty")
-    ids = list(dict.fromkeys(participant_ids))
-    base = q(amount / Decimal(len(ids)))
-    result = {uid: base for uid in ids}
+def _allocate_weighted(amount: Decimal, weights: dict[int, Decimal]) -> dict[int, Decimal]:
+    if not weights or any(value <= 0 for value in weights.values()):
+        raise ValueError("all split weights must be positive")
+    total_weight = sum(weights.values(), Decimal("0"))
+    raw = {uid: (amount * weight / total_weight) for uid, weight in weights.items()}
+    result = {uid: q(value) for uid, value in raw.items()}
     diff = q(amount - sum(result.values(), Decimal("0")))
-    step = Decimal("0.01") if diff > 0 else Decimal("-0.01")
-    i = 0
-    while diff != Decimal("0.00"):
-        uid = ids[i % len(ids)]
-        result[uid] = q(result[uid] + step)
-        diff = q(diff - step)
-        i += 1
+    if diff:
+        step = CENT if diff > 0 else -CENT
+        ordered = sorted(
+            weights,
+            key=lambda uid: (raw[uid] - result[uid], -uid),
+            reverse=diff > 0,
+        )
+        i = 0
+        while diff != Decimal("0.00"):
+            uid = ordered[i % len(ordered)]
+            result[uid] = q(result[uid] + step)
+            diff = q(diff - step)
+            i += 1
     return result
+
+
+def split_equal(amount: Decimal, participant_ids: list[int]) -> dict[int, Decimal]:
+    ids = list(dict.fromkeys(participant_ids))
+    if not ids:
+        raise ValueError("participant list cannot be empty")
+    return _allocate_weighted(q(amount), {uid: Decimal("1") for uid in ids})
+
+
+def calculate_split(
+    amount: Decimal,
+    participant_ids: list[int],
+    split_mode: str = "equal",
+    split_values: dict[int, Decimal] | None = None,
+) -> dict[int, Decimal]:
+    ids = list(dict.fromkeys(participant_ids))
+    if not ids:
+        raise ValueError("participant list cannot be empty")
+    total = q(amount)
+    if split_mode == "equal":
+        return split_equal(total, ids)
+
+    values = {int(uid): Decimal(str(value)) for uid, value in (split_values or {}).items()}
+    if set(values) != set(ids):
+        raise ValueError("split values must be provided for every participant")
+
+    if split_mode == "percentage":
+        if any(value < 0 for value in values.values()):
+            raise ValueError("percentages cannot be negative")
+        if q(sum(values.values(), Decimal("0"))) != q(HUNDRED):
+            raise ValueError("percentages must total 100")
+        return _allocate_weighted(total, values)
+
+    if split_mode == "shares":
+        return _allocate_weighted(total, values)
+
+    if split_mode == "exact":
+        exact = {uid: q(value) for uid, value in values.items()}
+        if any(value < 0 for value in exact.values()):
+            raise ValueError("exact split amounts cannot be negative")
+        if q(sum(exact.values(), Decimal("0"))) != total:
+            raise ValueError("exact split amounts must equal expense total")
+        return exact
+
+    raise ValueError("unsupported split mode")
 
 
 async def validate_expense_members(session: AsyncSession, group_id: int, payer_id: int, participants: list[int]) -> list[int]:
@@ -48,29 +102,50 @@ async def replace_expense_shares(
     expense_id: int,
     amount: Decimal,
     participant_ids: list[int],
+    split_mode: str = "equal",
+    split_values: dict[int, Decimal] | None = None,
 ) -> None:
     await session.execute(delete(ExpenseShare).where(ExpenseShare.expense_id == expense_id))
-    shares = split_equal(q(amount), participant_ids)
+    shares = calculate_split(q(amount), participant_ids, split_mode, split_values)
     for user_id, share_amount in shares.items():
         session.add(ExpenseShare(expense_id=expense_id, user_id=user_id, amount=share_amount))
+
+
+def serialize_split_config(split_values: dict[int, Decimal] | None) -> str | None:
+    if not split_values:
+        return None
+    return json.dumps({str(uid): str(value) for uid, value in split_values.items()}, separators=(",", ":"))
+
+
+def deserialize_split_config(value: str | None) -> dict[int, Decimal] | None:
+    if not value:
+        return None
+    raw = json.loads(value)
+    return {int(uid): Decimal(str(amount)) for uid, amount in raw.items()}
 
 
 async def create_expense(session: AsyncSession, group_id: int, payload) -> Expense:
     participants = await validate_expense_members(
         session, group_id, payload.paid_by_user_id, payload.participant_user_ids
     )
+    split_values = payload.split_values or None
+    calculate_split(payload.amount, participants, payload.split_mode, split_values)
     expense = Expense(
         group_id=group_id,
         paid_by_user_id=payload.paid_by_user_id,
         created_by_user_id=payload.actor_user_id,
         amount=q(payload.amount),
         title=payload.title,
+        split_mode=payload.split_mode,
+        split_config=serialize_split_config(split_values),
         category=payload.category,
         note=payload.note,
     )
     session.add(expense)
     await session.flush()
-    await replace_expense_shares(session, expense.id, payload.amount, participants)
+    await replace_expense_shares(
+        session, expense.id, payload.amount, participants, payload.split_mode, split_values
+    )
     await session.commit()
     await session.refresh(expense)
     return expense
@@ -80,12 +155,18 @@ async def update_expense(session: AsyncSession, expense: Expense, payload) -> Ex
     participants = await validate_expense_members(
         session, expense.group_id, payload.paid_by_user_id, payload.participant_user_ids
     )
+    split_values = payload.split_values or None
+    calculate_split(payload.amount, participants, payload.split_mode, split_values)
     expense.paid_by_user_id = payload.paid_by_user_id
     expense.amount = q(payload.amount)
     expense.title = payload.title
+    expense.split_mode = payload.split_mode
+    expense.split_config = serialize_split_config(split_values)
     expense.category = payload.category
     expense.note = payload.note
-    await replace_expense_shares(session, expense.id, payload.amount, participants)
+    await replace_expense_shares(
+        session, expense.id, payload.amount, participants, payload.split_mode, split_values
+    )
     await session.commit()
     await session.refresh(expense)
     return expense
