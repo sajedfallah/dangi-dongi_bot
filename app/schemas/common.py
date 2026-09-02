@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 from pydantic import BaseModel, Field
 
@@ -30,6 +31,13 @@ class MemberAdd(BaseModel):
     user_id: int
 
 
+class MemberOut(BaseModel):
+    user_id: int
+    display_name: str
+    telegram_id: int | None = None
+    role: str
+
+
 class ExpenseCreate(BaseModel):
     paid_by_user_id: int
     amount: Decimal = Field(gt=0)
@@ -46,7 +54,18 @@ class ExpenseOut(BaseModel):
     amount: Decimal
     title: str
     category: str | None = None
+    created_at: datetime
     model_config = {"from_attributes": True}
+
+
+class ExpenseHistoryItem(BaseModel):
+    id: int
+    title: str
+    amount: Decimal
+    paid_by_user_id: int
+    paid_by_name: str
+    category: str | None = None
+    created_at: datetime
 
 
 class SettlementCreate(BaseModel):
