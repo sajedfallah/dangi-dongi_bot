@@ -1,21 +1,43 @@
 services:
   db:
     image: postgres:16
+    restart: unless-stopped
     environment:
       POSTGRES_DB: dongi
       POSTGRES_USER: dongi
-      POSTGRES_PASSWORD: dongi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     volumes:
       - dongi_pg:/var/lib/postgresql/data
 
   api:
     build: .
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://dongi:dongi@db:5432/dongi
+      ENV: production
+      DATABASE_URL: postgresql+asyncpg://dongi:${POSTGRES_PASSWORD}@db:5432/dongi
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?set APP_SECRET_KEY}
+      SERVICE_API_TOKEN: ${SERVICE_API_TOKEN:?set SERVICE_API_TOKEN}
+      API_AUTH_REQUIRED: "true"
+      RATE_LIMIT_REQUESTS: ${RATE_LIMIT_REQUESTS:-120}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       - db
+
+  bot:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "app.bot.main"]
+    environment:
+      ENV: production
+      API_BASE_URL: http://api:8000
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?set APP_SECRET_KEY}
+      SERVICE_API_TOKEN: ${SERVICE_API_TOKEN:?set SERVICE_API_TOKEN}
+    depends_on:
+      - api
 
 volumes:
   dongi_pg:
