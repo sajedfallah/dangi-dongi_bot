@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.dashboard import router as dashboard_router
+from app.api.product import router as product_router
 from app.api.routes import router
 from app.core.config import settings
 from app.core.middleware import SecurityMiddleware
@@ -24,7 +25,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan,
     docs_url="/docs" if settings.env == "development" else None,
     redoc_url=None,
@@ -32,8 +33,9 @@ app = FastAPI(
 app.add_middleware(SecurityMiddleware)
 app.include_router(router)
 app.include_router(dashboard_router)
+app.include_router(product_router)
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": settings.app_name}
+    return {"status": "ok", "service": settings.app_name, "version": "0.4.0"}
