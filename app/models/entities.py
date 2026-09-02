@@ -15,6 +15,12 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, nullable=True, index=True)
     display_name: Mapped[str] = mapped_column(String(120))
+    bank_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    account_holder: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    card_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    iban: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    account_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    reminder_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -86,8 +92,22 @@ class Settlement(Base):
     to_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    receipt_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    receipt_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     responded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class DebtReminderState(Base):
+    __tablename__ = "debt_reminder_states"
+    __table_args__ = (UniqueConstraint("group_id", "debtor_user_id", "creditor_user_id", name="uq_debt_reminder_pair"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
+    debtor_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    creditor_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    last_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
 class AuditLog(Base):
