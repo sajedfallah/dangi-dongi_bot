@@ -54,6 +54,8 @@ class Expense(Base):
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     title: Mapped[str] = mapped_column(String(160))
+    split_mode: Mapped[str] = mapped_column(String(20), default="equal")
+    split_config: Mapped[str | None] = mapped_column(Text, nullable=True)
     category: Mapped[str | None] = mapped_column(String(60), nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
