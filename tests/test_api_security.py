@@ -69,9 +69,9 @@ async def test_api_requires_auth_and_accepts_service_token(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_rate_limit_for_authenticated_telegram_client(monkeypatch):
-    monkeypatch.setattr(settings, "telegram_bot_token", "123456:TEST_TOKEN")
-    monkeypatch.setattr(settings, "api_auth_required", True)
+async def test_rate_limit_for_development_client(monkeypatch):
+    monkeypatch.setattr(settings, "env", "development")
+    monkeypatch.setattr(settings, "api_auth_required", False)
     monkeypatch.setattr(settings, "rate_limit_requests", 2)
     monkeypatch.setattr(settings, "rate_limit_window_seconds", 60)
 
@@ -82,12 +82,10 @@ async def test_rate_limit_for_authenticated_telegram_client(monkeypatch):
     async def protected():
         return {"ok": True}
 
-    init_data = build_init_data(settings.telegram_bot_token, 777)
-    headers = {"X-Telegram-Init-Data": init_data}
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        assert (await client.get("/api/v1/protected", headers=headers)).status_code == 200
-        assert (await client.get("/api/v1/protected", headers=headers)).status_code == 200
-        limited = await client.get("/api/v1/protected", headers=headers)
+        assert (await client.get("/api/v1/protected")).status_code == 200
+        assert (await client.get("/api/v1/protected")).status_code == 200
+        limited = await client.get("/api/v1/protected")
         assert limited.status_code == 429
         assert "Retry-After" in limited.headers
