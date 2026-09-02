@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.db.session import get_db
-from app.models.entities import DebtReminderState, Expense, Group, GroupMember, Settlement, User
+from app.models.entities import AuditLog, DebtReminderState, Expense, ExpenseShare, Group, GroupMember, Settlement, User
 from app.services.ledger import calculate_balances, simplify_debts
 
 router = APIRouter(prefix="/api/v1/product", tags=["product"])
@@ -37,6 +38,13 @@ class ReminderSent(BaseModel):
     amount: Decimal = Field(gt=0)
 
 
+class HistoricalShareApply(BaseModel):
+    actor_user_id: int
+    member_user_id: int
+    mode: str = Field(pattern="^(equal|percentage|exact)$")
+    value: Decimal | None = None
+
+
 async def _member(db: AsyncSession, group_id: int, user_id: int) -> GroupMember:
     row = (await db.execute(select(GroupMember).where(
         GroupMember.group_id == group_id,
@@ -45,6 +53,28 @@ async def _member(db: AsyncSession, group_id: int, user_id: int) -> GroupMember:
     if not row:
         raise HTTPException(403, "group membership required")
     return row
+
+
+async def _manager(db: AsyncSession, group_id: int, user_id: int) -> GroupMember:
+    row = await _member(db, group_id, user_id)
+    if row.role not in {"owner", "admin"}:
+        raise HTTPException(403, "owner or admin role required")
+    return row
+
+
+def _money(value: Decimal) -> Decimal:
+    return Decimal(value).quantize(Decimal("0.01"))
+
+
+def _distribute(total: Decimal, weights: list[Decimal]) -> list[Decimal]:
+    if not weights or sum(weights) <= 0:
+        raise HTTPException(400, "cannot redistribute existing shares")
+    total = _money(total)
+    weight_sum = sum(weights)
+    amounts = [(total * w / weight_sum).quantize(Decimal("0.01"), rounding=ROUND_DOWN) for w in weights]
+    remainder = total - sum(amounts)
+    amounts[0] += remainder
+    return amounts
 
 
 @router.get("/users/{user_id}/payment-profile")
@@ -120,11 +150,7 @@ async def expense_report(group_id: int, actor_user_id: int, db: AsyncSession = D
         select(func.count(Expense.id)).where(Expense.group_id == group_id)
     )).scalar_one()
     rows = (await db.execute(
-        select(
-            func.coalesce(Expense.category, "other"),
-            func.sum(Expense.amount),
-            func.count(Expense.id),
-        )
+        select(func.coalesce(Expense.category, "other"), func.sum(Expense.amount), func.count(Expense.id))
         .where(Expense.group_id == group_id)
         .group_by(func.coalesce(Expense.category, "other"))
         .order_by(func.sum(Expense.amount).desc())
@@ -136,6 +162,89 @@ async def expense_report(group_id: int, actor_user_id: int, db: AsyncSession = D
             {"category": category, "amount": str(amount), "count": int(items)}
             for category, amount, items in rows
         ],
+    }
+
+
+@router.get("/groups/{group_id}/historical-expenses/{member_user_id}")
+async def historical_expenses_for_member(group_id: int, member_user_id: int, actor_user_id: int, db: AsyncSession = Depends(get_db)):
+    await _manager(db, group_id, actor_user_id)
+    await _member(db, group_id, member_user_id)
+    rows = (await db.execute(
+        select(Expense)
+        .where(Expense.group_id == group_id)
+        .options(selectinload(Expense.shares))
+        .order_by(Expense.created_at.desc())
+    )).scalars().all()
+    return [
+        {
+            "id": exp.id,
+            "title": exp.title,
+            "amount": str(exp.amount),
+            "category": exp.category,
+            "created_at": exp.created_at,
+            "already_participant": any(s.user_id == member_user_id for s in exp.shares),
+            "participant_count": len(exp.shares),
+        }
+        for exp in rows
+    ]
+
+
+@router.post("/groups/{group_id}/expenses/{expense_id}/historical-member")
+async def apply_historical_member(group_id: int, expense_id: int, payload: HistoricalShareApply, db: AsyncSession = Depends(get_db)):
+    await _manager(db, group_id, payload.actor_user_id)
+    await _member(db, group_id, payload.member_user_id)
+    expense = (await db.execute(
+        select(Expense)
+        .where(Expense.id == expense_id, Expense.group_id == group_id)
+        .options(selectinload(Expense.shares))
+    )).scalar_one_or_none()
+    if not expense:
+        raise HTTPException(404, "expense not found")
+    if any(s.user_id == payload.member_user_id for s in expense.shares):
+        raise HTTPException(409, "member already participates in this expense")
+    if not expense.shares:
+        raise HTTPException(409, "expense has no existing shares")
+
+    total = _money(Decimal(expense.amount))
+    old_shares = list(expense.shares)
+    old_weights = [Decimal(s.amount) for s in old_shares]
+
+    if payload.mode == "equal":
+        all_weights = [Decimal("1")] * (len(old_shares) + 1)
+        amounts = _distribute(total, all_weights)
+        old_amounts, new_amount = amounts[:-1], amounts[-1]
+    else:
+        if payload.value is None:
+            raise HTTPException(400, "value is required for percentage/exact")
+        if payload.mode == "percentage":
+            if payload.value <= 0 or payload.value >= 100:
+                raise HTTPException(400, "percentage must be between 0 and 100")
+            new_amount = _money(total * Decimal(payload.value) / Decimal("100"))
+        else:
+            new_amount = _money(Decimal(payload.value))
+            if new_amount <= 0 or new_amount >= total:
+                raise HTTPException(400, "exact amount must be greater than zero and less than total expense")
+        old_amounts = _distribute(total - new_amount, old_weights)
+
+    for share, amount in zip(old_shares, old_amounts):
+        share.amount = amount
+    db.add(ExpenseShare(expense_id=expense.id, user_id=payload.member_user_id, amount=new_amount))
+    db.add(AuditLog(
+        group_id=group_id,
+        actor_user_id=payload.actor_user_id,
+        action="expense.member_added_retroactively",
+        entity_type="expense",
+        entity_id=expense.id,
+        details=f'{{"member_user_id": {payload.member_user_id}, "mode": "{payload.mode}", "new_share": "{new_amount}"}}',
+    ))
+    await db.commit()
+    return {
+        "ok": True,
+        "expense_id": expense.id,
+        "member_user_id": payload.member_user_id,
+        "mode": payload.mode,
+        "new_share": str(new_amount),
+        "total": str(total),
     }
 
 
@@ -152,12 +261,7 @@ async def attach_receipt(group_id: int, settlement_id: int, payload: ReceiptAtta
     st.receipt_file_id = payload.receipt_file_id
     st.receipt_kind = payload.receipt_kind
     await db.commit()
-    return {
-        "ok": True,
-        "settlement_id": st.id,
-        "receipt_file_id": st.receipt_file_id,
-        "receipt_kind": st.receipt_kind,
-    }
+    return {"ok": True, "settlement_id": st.id, "receipt_file_id": st.receipt_file_id, "receipt_kind": st.receipt_kind}
 
 
 @router.get("/groups/{group_id}/settlements/{settlement_id}/receipt")
@@ -166,11 +270,7 @@ async def settlement_receipt(group_id: int, settlement_id: int, actor_user_id: i
     st = await db.get(Settlement, settlement_id)
     if not st or st.group_id != group_id:
         raise HTTPException(404, "settlement not found")
-    return {
-        "settlement_id": st.id,
-        "receipt_file_id": st.receipt_file_id,
-        "receipt_kind": st.receipt_kind,
-    }
+    return {"settlement_id": st.id, "receipt_file_id": st.receipt_file_id, "receipt_kind": st.receipt_kind}
 
 
 @router.get("/reminders/due")
