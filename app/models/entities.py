@@ -36,6 +36,7 @@ class Group(Base):
 
     members: Mapped[list["GroupMember"]] = relationship(back_populates="group", cascade="all, delete-orphan")
     expenses: Mapped[list["Expense"]] = relationship(back_populates="group", cascade="all, delete-orphan")
+    categories: Mapped[list["GroupCategory"]] = relationship(back_populates="group", cascade="all, delete-orphan")
 
 
 class GroupMember(Base):
@@ -50,6 +51,19 @@ class GroupMember(Base):
 
     group: Mapped["Group"] = relationship(back_populates="members")
     user: Mapped["User"] = relationship()
+
+
+class GroupCategory(Base):
+    __tablename__ = "group_categories"
+    __table_args__ = (UniqueConstraint("group_id", "name", name="uq_group_category_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(60))
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    group: Mapped["Group"] = relationship(back_populates="categories")
 
 
 class Expense(Base):
