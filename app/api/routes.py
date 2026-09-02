@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, select
@@ -22,7 +23,9 @@ from app.schemas.common import (
     MemberAdd,
     MemberOut,
     MemberRoleUpdate,
+    SettlementAction,
     SettlementCreate,
+    SettlementOut,
     TransferSuggestion,
     UserCreate,
     UserOut,
@@ -272,21 +275,95 @@ async def settlement_plan(group_id: int, db: AsyncSession = Depends(get_db)):
     return [TransferSuggestion(**item) for item in simplify_debts(await calculate_balances(db, group_id))]
 
 
-@router.post("/groups/{group_id}/settlements")
-async def settle(group_id: int, payload: SettlementCreate, db: AsyncSession = Depends(get_db)):
+@router.post("/groups/{group_id}/settlements", response_model=SettlementOut)
+async def request_settlement(group_id: int, payload: SettlementCreate, db: AsyncSession = Depends(get_db)):
     await require_group(db, group_id)
     await require_member(db, group_id, payload.actor_user_id)
     if payload.actor_user_id != payload.from_user_id:
-        raise HTTPException(403, "only the debtor can register this settlement")
+        raise HTTPException(403, "only the debtor can request this settlement")
     if payload.from_user_id == payload.to_user_id:
         raise HTTPException(400, "from and to users must differ")
     members = set((await db.execute(select(GroupMember.user_id).where(GroupMember.group_id == group_id))).scalars().all())
     if payload.from_user_id not in members or payload.to_user_id not in members:
         raise HTTPException(400, "both users must be group members")
-    st = Settlement(group_id=group_id, amount=q(payload.amount), from_user_id=payload.from_user_id, to_user_id=payload.to_user_id)
+    duplicate = (await db.execute(select(Settlement).where(
+        Settlement.group_id == group_id,
+        Settlement.from_user_id == payload.from_user_id,
+        Settlement.to_user_id == payload.to_user_id,
+        Settlement.amount == q(payload.amount),
+        Settlement.status == "pending",
+    ))).scalar_one_or_none()
+    if duplicate:
+        return duplicate
+    st = Settlement(
+        group_id=group_id,
+        amount=q(payload.amount),
+        from_user_id=payload.from_user_id,
+        to_user_id=payload.to_user_id,
+        status="pending",
+    )
     db.add(st)
     await db.flush()
-    audit(db, group_id, payload.actor_user_id, "settlement.created", "settlement", st.id, {"from_user_id": st.from_user_id, "to_user_id": st.to_user_id, "amount": st.amount})
+    audit(db, group_id, payload.actor_user_id, "settlement.requested", "settlement", st.id, {
+        "from_user_id": st.from_user_id,
+        "to_user_id": st.to_user_id,
+        "amount": st.amount,
+    })
     await db.commit()
     await db.refresh(st)
-    return {"ok": True, "settlement_id": st.id}
+    return st
+
+
+@router.get("/groups/{group_id}/settlements/pending", response_model=list[SettlementOut])
+async def pending_settlements(group_id: int, actor_user_id: int, db: AsyncSession = Depends(get_db)):
+    await require_member(db, group_id, actor_user_id)
+    rows = await db.execute(select(Settlement).where(
+        Settlement.group_id == group_id,
+        Settlement.status == "pending",
+        (Settlement.from_user_id == actor_user_id) | (Settlement.to_user_id == actor_user_id),
+    ).order_by(Settlement.created_at.desc()))
+    return list(rows.scalars().all())
+
+
+@router.post("/groups/{group_id}/settlements/{settlement_id}/confirm", response_model=SettlementOut)
+async def confirm_settlement(group_id: int, settlement_id: int, payload: SettlementAction, db: AsyncSession = Depends(get_db)):
+    await require_member(db, group_id, payload.actor_user_id)
+    st = await db.get(Settlement, settlement_id)
+    if not st or st.group_id != group_id:
+        raise HTTPException(404, "settlement not found")
+    if st.to_user_id != payload.actor_user_id:
+        raise HTTPException(403, "only the creditor can confirm this settlement")
+    if st.status != "pending":
+        raise HTTPException(409, "settlement is no longer pending")
+    st.status = "confirmed"
+    st.responded_at = datetime.utcnow()
+    audit(db, group_id, payload.actor_user_id, "settlement.confirmed", "settlement", st.id, {
+        "from_user_id": st.from_user_id,
+        "to_user_id": st.to_user_id,
+        "amount": st.amount,
+    })
+    await db.commit()
+    await db.refresh(st)
+    return st
+
+
+@router.post("/groups/{group_id}/settlements/{settlement_id}/reject", response_model=SettlementOut)
+async def reject_settlement(group_id: int, settlement_id: int, payload: SettlementAction, db: AsyncSession = Depends(get_db)):
+    await require_member(db, group_id, payload.actor_user_id)
+    st = await db.get(Settlement, settlement_id)
+    if not st or st.group_id != group_id:
+        raise HTTPException(404, "settlement not found")
+    if st.to_user_id != payload.actor_user_id:
+        raise HTTPException(403, "only the creditor can reject this settlement")
+    if st.status != "pending":
+        raise HTTPException(409, "settlement is no longer pending")
+    st.status = "rejected"
+    st.responded_at = datetime.utcnow()
+    audit(db, group_id, payload.actor_user_id, "settlement.rejected", "settlement", st.id, {
+        "from_user_id": st.from_user_id,
+        "to_user_id": st.to_user_id,
+        "amount": st.amount,
+    })
+    await db.commit()
+    await db.refresh(st)
+    return st
