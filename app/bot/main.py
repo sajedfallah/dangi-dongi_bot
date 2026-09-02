@@ -66,10 +66,6 @@ def parse_number(value: str) -> Decimal:
     return number
 
 
-def parse_amount(value: str) -> Decimal:
-    return parse_number(value)
-
-
 def fmt_amount(value) -> str:
     amount = Decimal(str(value))
     return f"{int(amount):,}" if amount == amount.to_integral_value() else f"{amount:,.2f}"
@@ -123,6 +119,7 @@ def group_menu(group_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="📊 وضعیت حساب", callback_data=f"balance:{group_id}"),
             InlineKeyboardButton(text="💳 تسویه", callback_data=f"plan:{group_id}"),
         ],
+        [InlineKeyboardButton(text="⏳ تسویه‌های منتظر", callback_data=f"settlements:pending:{group_id}")],
         [
             InlineKeyboardButton(text="📜 تاریخچه", callback_data=f"history:{group_id}"),
             InlineKeyboardButton(text="👥 اعضا", callback_data=f"members:{group_id}"),
@@ -163,6 +160,18 @@ def edit_menu(group_id: int, expense_id: int) -> InlineKeyboardMarkup:
     ])
 
 
+async def notify_users(bot: Bot, members: list[dict], user_ids: set[int], text: str, exclude_telegram_id: int | None = None):
+    for member in members:
+        telegram_id = member.get("telegram_id")
+        if member["user_id"] not in user_ids or not telegram_id or telegram_id == exclude_telegram_id:
+            continue
+        try:
+            await bot.send_message(telegram_id, text)
+        except Exception:
+            # Notification failure must never roll back a financial operation.
+            pass
+
+
 async def show_groups(message: Message, user_id: int):
     async with api_client() as client:
         response = await client.get(f"/api/v1/users/{user_id}/groups")
@@ -196,88 +205,6 @@ async def prompt_split_value(target: Message, state: FSMContext, edit: bool = Fa
     await state.set_state(EditExpenseFlow.waiting_split_value if edit else ExpenseFlow.waiting_split_value)
 
 
-async def submit_expense_create(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    payload = {
-        "actor_user_id": data["actor_user_id"],
-        "paid_by_user_id": data["paid_by_user_id"],
-        "amount": data["amount"],
-        "title": data["title"],
-        "participant_user_ids": data["participant_user_ids"],
-        "split_mode": data.get("split_mode", "equal"),
-        "split_values": data.get("split_values"),
-    }
-    async with api_client() as client:
-        response = await client.post(f"/api/v1/groups/{data['group_id']}/expenses", json=payload)
-    if response.status_code >= 400:
-        detail = response.json().get("detail", "ثبت هزینه انجام نشد") if response.headers.get("content-type", "").startswith("application/json") else "ثبت هزینه انجام نشد"
-        await callback.answer("ثبت نشد", show_alert=True)
-        await callback.message.answer(f"❌ {detail}")
-        return
-    expense = response.json()
-    names = {m["user_id"]: m["display_name"] for m in await get_members(data["group_id"])}
-    payer = names.get(data["paid_by_user_id"], "نامشخص")
-    group_id = data["group_id"]
-    await state.clear()
-    await callback.answer("ثبت شد")
-    await callback.message.answer(
-        f"✅ هزینه ثبت شد\n\n📝 {expense['title']}\n💰 {fmt_amount(expense['amount'])} تومان\n"
-        f"💳 پرداخت‌کننده: {payer}\n⚖️ تقسیم: {SPLIT_LABELS.get(expense.get('split_mode'), 'مساوی')}",
-        reply_markup=group_menu(group_id),
-    )
-
-
-async def submit_expense_edit(target: Message, state: FSMContext):
-    data = await state.get_data()
-    payload = {
-        "actor_user_id": data["actor_user_id"],
-        "paid_by_user_id": data["paid_by_user_id"],
-        "amount": data["amount"],
-        "title": data["title"],
-        "participant_user_ids": data["participant_user_ids"],
-        "split_mode": data.get("split_mode", "equal"),
-        "split_values": data.get("split_values"),
-        "category": data.get("category"),
-        "note": data.get("note"),
-    }
-    async with api_client() as client:
-        response = await client.put(
-            f"/api/v1/groups/{data['group_id']}/expenses/{data['expense_id']}",
-            json=payload,
-        )
-    if response.status_code >= 400:
-        detail = response.json().get("detail", "ویرایش انجام نشد") if response.headers.get("content-type", "").startswith("application/json") else "ویرایش انجام نشد"
-        await target.answer(f"❌ {detail}")
-        return
-    expense = response.json()
-    group_id = data["group_id"]
-    await state.clear()
-    await target.answer(
-        f"✅ هزینه #{expense['id']} ویرایش شد.\n📝 {expense['title']}\n💰 {fmt_amount(expense['amount'])} تومان\n"
-        f"⚖️ تقسیم: {SPLIT_LABELS.get(expense.get('split_mode'), 'مساوی')}",
-        reply_markup=group_menu(group_id),
-    )
-
-
-async def load_edit_state(state: FSMContext, user: dict, group_id: int, expense_id: int) -> dict:
-    expense = await get_expense(group_id, expense_id, user["id"])
-    await state.clear()
-    await state.update_data(
-        group_id=group_id,
-        expense_id=expense_id,
-        actor_user_id=user["id"],
-        paid_by_user_id=expense["paid_by_user_id"],
-        amount=str(expense["amount"]),
-        title=expense["title"],
-        participant_user_ids=expense["participant_user_ids"],
-        split_mode=expense.get("split_mode", "equal"),
-        split_values=expense.get("split_values"),
-        category=expense.get("category"),
-        note=expense.get("note"),
-    )
-    return expense
-
-
 async def run_bot():
     if not settings.telegram_bot_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured")
@@ -286,6 +213,94 @@ async def run_bot():
 
     bot = Bot(settings.telegram_bot_token)
     dp = Dispatcher(storage=MemoryStorage())
+
+    async def submit_expense_create(callback: CallbackQuery, state: FSMContext):
+        data = await state.get_data()
+        payload = {
+            "actor_user_id": data["actor_user_id"],
+            "paid_by_user_id": data["paid_by_user_id"],
+            "amount": data["amount"],
+            "title": data["title"],
+            "participant_user_ids": data["participant_user_ids"],
+            "split_mode": data.get("split_mode", "equal"),
+            "split_values": data.get("split_values"),
+        }
+        async with api_client() as client:
+            response = await client.post(f"/api/v1/groups/{data['group_id']}/expenses", json=payload)
+        if response.status_code >= 400:
+            await callback.answer("ثبت هزینه انجام نشد.", show_alert=True)
+            return
+        expense = response.json()
+        members = await get_members(data["group_id"])
+        names = {m["user_id"]: m["display_name"] for m in members}
+        payer = names.get(data["paid_by_user_id"], "نامشخص")
+        group = await get_group(data["group_id"])
+        text = (
+            f"💸 هزینه جدید در «{group['name']}»\n"
+            f"📝 {expense['title']}\n💰 {fmt_amount(expense['amount'])} تومان\n"
+            f"💳 پرداخت‌کننده: {payer}\n⚖️ {SPLIT_LABELS.get(expense.get('split_mode'), 'مساوی')}"
+        )
+        await notify_users(
+            bot,
+            members,
+            set(data["participant_user_ids"]) | {data["paid_by_user_id"]},
+            text,
+            exclude_telegram_id=callback.from_user.id,
+        )
+        group_id = data["group_id"]
+        await state.clear()
+        await callback.answer("ثبت شد")
+        await callback.message.answer("✅ هزینه ثبت شد و اعضای مرتبط باخبر شدند.", reply_markup=group_menu(group_id))
+
+    async def submit_expense_edit(target: Message, state: FSMContext):
+        data = await state.get_data()
+        payload = {
+            "actor_user_id": data["actor_user_id"],
+            "paid_by_user_id": data["paid_by_user_id"],
+            "amount": data["amount"],
+            "title": data["title"],
+            "participant_user_ids": data["participant_user_ids"],
+            "split_mode": data.get("split_mode", "equal"),
+            "split_values": data.get("split_values"),
+            "category": data.get("category"),
+            "note": data.get("note"),
+        }
+        async with api_client() as client:
+            response = await client.put(f"/api/v1/groups/{data['group_id']}/expenses/{data['expense_id']}", json=payload)
+        if response.status_code >= 400:
+            await target.answer("❌ ویرایش انجام نشد.")
+            return
+        expense = response.json()
+        members = await get_members(data["group_id"])
+        group = await get_group(data["group_id"])
+        await notify_users(
+            bot,
+            members,
+            set(data["participant_user_ids"]) | {data["paid_by_user_id"]},
+            f"✏️ هزینه #{expense['id']} در «{group['name']}» ویرایش شد.\n📝 {expense['title']}\n💰 {fmt_amount(expense['amount'])} تومان",
+            exclude_telegram_id=target.chat.id,
+        )
+        group_id = data["group_id"]
+        await state.clear()
+        await target.answer(f"✅ هزینه #{expense['id']} ویرایش شد.", reply_markup=group_menu(group_id))
+
+    async def load_edit_state(state: FSMContext, user: dict, group_id: int, expense_id: int):
+        expense = await get_expense(group_id, expense_id, user["id"])
+        await state.clear()
+        await state.update_data(
+            group_id=group_id,
+            expense_id=expense_id,
+            actor_user_id=user["id"],
+            paid_by_user_id=expense["paid_by_user_id"],
+            amount=str(expense["amount"]),
+            title=expense["title"],
+            participant_user_ids=expense["participant_user_ids"],
+            split_mode=expense.get("split_mode", "equal"),
+            split_values=expense.get("split_values"),
+            category=expense.get("category"),
+            note=expense.get("note"),
+        )
+        return expense
 
     @dp.message(CommandStart(deep_link=True))
     async def start_with_invite(message: Message, command: CommandObject):
@@ -306,7 +321,7 @@ async def run_bot():
     @dp.message(CommandStart())
     async def start(message: Message):
         await ensure_user(message.from_user)
-        await message.answer("سلام 👋\nبه دنگی - دونگی خوش اومدی. خرج‌های مشترک و دونگ‌ها رو بدون حساب‌وکتاب دستی مدیریت کن.", reply_markup=main_keyboard)
+        await message.answer("سلام 👋\nبه دنگی - دونگی خوش اومدی.", reply_markup=main_keyboard)
 
     @dp.message(Command("cancel"))
     async def cancel(message: Message, state: FSMContext):
@@ -323,7 +338,7 @@ async def run_bot():
     async def create_group_start(message: Message, state: FSMContext):
         await state.clear()
         await state.set_state(CreateGroupFlow.waiting_name)
-        await message.answer("اسم حساب رو وارد کن.\nمثال: سفر شمال\n\nلغو: /cancel")
+        await message.answer("اسم حساب رو وارد کن. مثال: سفر شمال")
 
     @dp.message(CreateGroupFlow.waiting_name)
     async def create_group_finish(message: Message, state: FSMContext):
@@ -366,9 +381,8 @@ async def run_bot():
             return
         group = await get_group(group_id)
         me = await bot.get_me()
-        link = f"https://t.me/{me.username}?start={make_join_payload(group_id)}"
         await callback.answer()
-        await callback.message.answer(f"🔗 لینک امن دعوت «{group['name']}»:\n{link}")
+        await callback.message.answer(f"🔗 لینک امن دعوت «{group['name']}»:\nhttps://t.me/{me.username}?start={make_join_payload(group_id)}")
 
     @dp.callback_query(F.data.startswith("members:"))
     async def members(callback: CallbackQuery):
@@ -390,14 +404,14 @@ async def run_bot():
         await state.update_data(group_id=group_id, actor_user_id=user["id"])
         await state.set_state(ExpenseFlow.waiting_amount)
         await callback.answer()
-        await callback.message.answer("💰 مبلغ هزینه رو به تومان وارد کن.\nمثال: 1,250,000")
+        await callback.message.answer("💰 مبلغ هزینه رو به تومان وارد کن.")
 
     @dp.message(ExpenseFlow.waiting_amount)
     async def expense_amount(message: Message, state: FSMContext):
         try:
-            amount = parse_amount(message.text or "")
+            amount = parse_number(message.text or "")
         except ValueError:
-            await message.answer("مبلغ معتبر نیست. مثال: 750000")
+            await message.answer("مبلغ معتبر نیست.")
             return
         await state.update_data(amount=str(amount))
         await state.set_state(ExpenseFlow.waiting_title)
@@ -485,9 +499,10 @@ async def run_bot():
             await message.answer("❌ مجموع درصدها باید دقیقاً 100 باشد. دوباره وارد کن.")
             await prompt_split_value(message, state)
             return
-        fake = await bot.send_message(message.chat.id, "در حال ثبت…")
+        fake_message = await bot.send_message(message.chat.id, "در حال ثبت…")
         class CallbackProxy:
-            message = fake
+            message = fake_message
+            from_user = message.from_user
             async def answer(self, *args, **kwargs):
                 return None
         await submit_expense_create(CallbackProxy(), state)
@@ -526,28 +541,127 @@ async def run_bot():
             await callback.message.answer("✅ همه‌چیز تسویه است.", reply_markup=group_menu(group_id))
             return
         lines = [f"• {names.get(x['from_user_id'], 'کاربر')} → {names.get(x['to_user_id'], 'کاربر')}: {fmt_amount(x['amount'])} تومان" for x in plan]
-        buttons = [[InlineKeyboardButton(text=f"✅ پرداخت کردم به {names.get(x['to_user_id'], 'کاربر')}", callback_data=f"settle:{group_id}:{x['from_user_id']}:{x['to_user_id']}:{x['amount']}")] for x in plan if x["from_user_id"] == user["id"]]
+        buttons = [[InlineKeyboardButton(
+            text=f"💸 پرداخت کردم به {names.get(x['to_user_id'], 'کاربر')}",
+            callback_data=f"settle:{group_id}:{x['from_user_id']}:{x['to_user_id']}:{x['amount']}",
+        )] for x in plan if x["from_user_id"] == user["id"]]
         buttons.append([InlineKeyboardButton(text="⬅️ بازگشت", callback_data=f"group:{group_id}")])
         await callback.answer()
         await callback.message.answer("💳 پیشنهاد تسویه:\n\n" + "\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
     @dp.callback_query(F.data.startswith("settle:"))
-    async def settle(callback: CallbackQuery):
+    async def request_settlement(callback: CallbackQuery):
         _, group_raw, from_raw, to_raw, amount_raw = callback.data.split(":", 4)
         group_id, from_id, to_id = int(group_raw), int(from_raw), int(to_raw)
         user = await authorize(callback, group_id)
         if not user or user["id"] != from_id:
-            if user:
-                await callback.answer("فقط بدهکار می‌تونه پرداخت خودش رو ثبت کنه.", show_alert=True)
             return
         async with api_client() as client:
-            response = await client.post(f"/api/v1/groups/{group_id}/settlements", json={"actor_user_id": user["id"], "from_user_id": from_id, "to_user_id": to_id, "amount": amount_raw})
+            response = await client.post(f"/api/v1/groups/{group_id}/settlements", json={
+                "actor_user_id": user["id"], "from_user_id": from_id, "to_user_id": to_id, "amount": amount_raw,
+            })
         if response.status_code >= 400:
-            await callback.answer("ثبت تسویه انجام نشد.", show_alert=True)
+            await callback.answer("درخواست تسویه ثبت نشد.", show_alert=True)
             return
-        names = {m["user_id"]: m["display_name"] for m in await get_members(group_id)}
-        await callback.answer("تسویه ثبت شد")
-        await callback.message.answer(f"✅ پرداخت {fmt_amount(amount_raw)} تومان به {names.get(to_id, 'کاربر')} ثبت شد.", reply_markup=group_menu(group_id))
+        settlement = response.json()
+        members = await get_members(group_id)
+        names = {m["user_id"]: m["display_name"] for m in members}
+        creditor = next((m for m in members if m["user_id"] == to_id), None)
+        if creditor and creditor.get("telegram_id"):
+            try:
+                await bot.send_message(
+                    creditor["telegram_id"],
+                    f"💳 {names.get(from_id, 'کاربر')} اعلام کرده {fmt_amount(amount_raw)} تومان به شما پرداخت کرده.\n"
+                    "آیا پرداخت را دریافت کرده‌اید؟",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="✅ تأیید دریافت", callback_data=f"settlement:confirm:{group_id}:{settlement['id']}")],
+                        [InlineKeyboardButton(text="❌ رد", callback_data=f"settlement:reject:{group_id}:{settlement['id']}")],
+                    ]),
+                )
+            except Exception:
+                pass
+        await callback.answer("در انتظار تأیید")
+        await callback.message.answer("⏳ درخواست تسویه ثبت شد. مانده حساب فقط بعد از تأیید طرف مقابل تغییر می‌کند.", reply_markup=group_menu(group_id))
+
+    @dp.callback_query(F.data.startswith("settlement:confirm:"))
+    async def confirm_settlement(callback: CallbackQuery):
+        _, _, group_raw, settlement_raw = callback.data.split(":")
+        group_id, settlement_id = int(group_raw), int(settlement_raw)
+        user = await authorize(callback, group_id)
+        if not user:
+            return
+        async with api_client() as client:
+            response = await client.post(
+                f"/api/v1/groups/{group_id}/settlements/{settlement_id}/confirm",
+                json={"actor_user_id": user["id"]},
+            )
+        if response.status_code >= 400:
+            await callback.answer("این درخواست قابل تأیید نیست.", show_alert=True)
+            return
+        st = response.json()
+        members = await get_members(group_id)
+        debtor = next((m for m in members if m["user_id"] == st["from_user_id"]), None)
+        if debtor and debtor.get("telegram_id"):
+            try:
+                await bot.send_message(debtor["telegram_id"], f"✅ تسویه {fmt_amount(st['amount'])} تومان تأیید شد و مانده حساب به‌روزرسانی شد.")
+            except Exception:
+                pass
+        await callback.answer("تأیید شد")
+        await callback.message.answer("✅ دریافت وجه تأیید شد. مانده حساب به‌روزرسانی شد.", reply_markup=group_menu(group_id))
+
+    @dp.callback_query(F.data.startswith("settlement:reject:"))
+    async def reject_settlement(callback: CallbackQuery):
+        _, _, group_raw, settlement_raw = callback.data.split(":")
+        group_id, settlement_id = int(group_raw), int(settlement_raw)
+        user = await authorize(callback, group_id)
+        if not user:
+            return
+        async with api_client() as client:
+            response = await client.post(
+                f"/api/v1/groups/{group_id}/settlements/{settlement_id}/reject",
+                json={"actor_user_id": user["id"]},
+            )
+        if response.status_code >= 400:
+            await callback.answer("این درخواست قابل رد نیست.", show_alert=True)
+            return
+        st = response.json()
+        members = await get_members(group_id)
+        debtor = next((m for m in members if m["user_id"] == st["from_user_id"]), None)
+        if debtor and debtor.get("telegram_id"):
+            try:
+                await bot.send_message(debtor["telegram_id"], f"❌ درخواست تسویه {fmt_amount(st['amount'])} تومان توسط طرف مقابل رد شد.")
+            except Exception:
+                pass
+        await callback.answer("رد شد")
+        await callback.message.answer("❌ درخواست تسویه رد شد و مانده حساب تغییری نکرد.", reply_markup=group_menu(group_id))
+
+    @dp.callback_query(F.data.startswith("settlements:pending:"))
+    async def pending_settlements(callback: CallbackQuery):
+        group_id = int(callback.data.split(":")[2])
+        user = await authorize(callback, group_id)
+        if not user:
+            return
+        members = await get_members(group_id)
+        names = {m["user_id"]: m["display_name"] for m in members}
+        async with api_client() as client:
+            response = await client.get(f"/api/v1/groups/{group_id}/settlements/pending", params={"actor_user_id": user["id"]})
+            response.raise_for_status()
+            items = response.json()
+        if not items:
+            await callback.answer()
+            await callback.message.answer("⏳ درخواست تسویه منتظری نداری.", reply_markup=group_menu(group_id))
+            return
+        lines, buttons = [], []
+        for st in items:
+            lines.append(f"• #{st['id']} {names.get(st['from_user_id'], 'کاربر')} → {names.get(st['to_user_id'], 'کاربر')}: {fmt_amount(st['amount'])} تومان")
+            if st["to_user_id"] == user["id"]:
+                buttons.append([
+                    InlineKeyboardButton(text=f"✅ تأیید #{st['id']}", callback_data=f"settlement:confirm:{group_id}:{st['id']}"),
+                    InlineKeyboardButton(text=f"❌ رد #{st['id']}", callback_data=f"settlement:reject:{group_id}:{st['id']}"),
+                ])
+        buttons.append([InlineKeyboardButton(text="⬅️ بازگشت", callback_data=f"group:{group_id}")])
+        await callback.answer()
+        await callback.message.answer("⏳ تسویه‌های در انتظار:\n\n" + "\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
     @dp.callback_query(F.data.startswith("history:"))
     async def history(callback: CallbackQuery):
@@ -585,25 +699,20 @@ async def run_bot():
         user = await authorize(callback, group_id)
         if not user:
             return
-        try:
-            expense = await get_expense(group_id, expense_id, user["id"])
-        except httpx.HTTPError:
-            await callback.answer("هزینه پیدا نشد.", show_alert=True)
-            return
+        expense = await get_expense(group_id, expense_id, user["id"])
         await callback.answer()
         await callback.message.answer(
-            f"✏️ ویرایش #{expense_id}\n📝 {expense['title']}\n💰 {fmt_amount(expense['amount'])} تومان\n⚖️ {SPLIT_LABELS.get(expense.get('split_mode'), 'مساوی')}",
+            f"✏️ ویرایش #{expense_id}\n📝 {expense['title']}\n💰 {fmt_amount(expense['amount'])} تومان",
             reply_markup=edit_menu(group_id, expense_id),
         )
 
     @dp.callback_query(F.data.startswith("edit:amount:"))
     async def edit_amount_start(callback: CallbackQuery, state: FSMContext):
         _, _, group_raw, expense_raw = callback.data.split(":")
-        group_id, expense_id = int(group_raw), int(expense_raw)
-        user = await authorize(callback, group_id)
+        user = await authorize(callback, int(group_raw))
         if not user:
             return
-        await load_edit_state(state, user, group_id, expense_id)
+        await load_edit_state(state, user, int(group_raw), int(expense_raw))
         await state.set_state(EditExpenseFlow.waiting_amount)
         await callback.answer()
         await callback.message.answer("💰 مبلغ جدید را وارد کن:")
@@ -611,7 +720,7 @@ async def run_bot():
     @dp.message(EditExpenseFlow.waiting_amount)
     async def edit_amount_finish(message: Message, state: FSMContext):
         try:
-            amount = parse_amount(message.text or "")
+            amount = parse_number(message.text or "")
         except ValueError:
             await message.answer("مبلغ معتبر وارد کن.")
             return
@@ -619,17 +728,15 @@ async def run_bot():
         await state.update_data(amount=str(amount))
         if data.get("split_mode") == "exact":
             await state.update_data(split_mode="equal", split_values=None)
-            await message.answer("ℹ️ چون مبلغ کل تغییر کرد، تقسیم مبلغ ثابت به حالت مساوی برگشت. در صورت نیاز دوباره نوع تقسیم را ویرایش کن.")
         await submit_expense_edit(message, state)
 
     @dp.callback_query(F.data.startswith("edit:title:"))
     async def edit_title_start(callback: CallbackQuery, state: FSMContext):
         _, _, group_raw, expense_raw = callback.data.split(":")
-        group_id, expense_id = int(group_raw), int(expense_raw)
-        user = await authorize(callback, group_id)
+        user = await authorize(callback, int(group_raw))
         if not user:
             return
-        await load_edit_state(state, user, group_id, expense_id)
+        await load_edit_state(state, user, int(group_raw), int(expense_raw))
         await state.set_state(EditExpenseFlow.waiting_title)
         await callback.answer()
         await callback.message.answer("📝 عنوان جدید را وارد کن:")
@@ -646,11 +753,10 @@ async def run_bot():
     @dp.callback_query(F.data.startswith("edit:split:"))
     async def edit_split_start(callback: CallbackQuery, state: FSMContext):
         _, _, group_raw, expense_raw = callback.data.split(":")
-        group_id, expense_id = int(group_raw), int(expense_raw)
-        user = await authorize(callback, group_id)
+        user = await authorize(callback, int(group_raw))
         if not user:
             return
-        await load_edit_state(state, user, group_id, expense_id)
+        await load_edit_state(state, user, int(group_raw), int(expense_raw))
         await state.set_state(EditExpenseFlow.waiting_split_mode)
         await callback.answer()
         await callback.message.answer("⚖️ نوع تقسیم جدید:", reply_markup=split_keyboard("edit:mode"))
@@ -712,9 +818,6 @@ async def run_bot():
             return
         async with api_client() as client:
             response = await client.request("DELETE", f"/api/v1/groups/{group_id}/expenses/{expense_id}", json={"actor_user_id": user["id"]})
-        if response.status_code == 403:
-            await callback.answer("اجازه حذف این هزینه را نداری.", show_alert=True)
-            return
         if response.status_code >= 400:
             await callback.answer("حذف هزینه انجام نشد.", show_alert=True)
             return
@@ -725,10 +828,10 @@ async def run_bot():
     async def help_message(message: Message):
         await message.answer(
             "دنگی - دونگی برای مدیریت خرج‌های مشترک است.\n\n"
-            "• تقسیم مساوی، درصدی، سهمی/وزنی و مبلغ ثابت\n"
-            "• ویرایش مبلغ، عنوان و مدل تقسیم از تاریخچه\n"
-            "• محاسبه طلب/بدهی و پیشنهاد تسویه\n"
-            "• دعوت امن اعضا با لینک تلگرام\n\nلغو عملیات: /cancel"
+            "• تقسیم مساوی، درصدی، سهمی و مبلغ ثابت\n"
+            "• ویرایش و حذف هزینه با کنترل دسترسی\n"
+            "• تسویه دوطرفه: بدهکار درخواست می‌دهد و طلبکار تأیید می‌کند\n"
+            "• اعلان ثبت/ویرایش هزینه برای اعضای مرتبط\n\nلغو عملیات: /cancel"
         )
 
     await dp.start_polling(bot)
