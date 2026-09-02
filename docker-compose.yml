@@ -29,7 +29,7 @@ services:
   bot:
     build: .
     restart: unless-stopped
-    command: ["python", "-m", "app.bot.main"]
+    command: ["python", "run_bot.py"]
     environment:
       ENV: production
       API_BASE_URL: http://api:8000
