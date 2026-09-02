@@ -1,6 +1,10 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+SplitMode = Literal["equal", "percentage", "shares", "exact"]
 
 
 class UserCreate(BaseModel):
@@ -49,6 +53,8 @@ class ExpenseCreate(BaseModel):
     amount: Decimal = Field(gt=0)
     title: str = Field(min_length=1, max_length=160)
     participant_user_ids: list[int] = Field(min_length=1)
+    split_mode: SplitMode = "equal"
+    split_values: dict[int, Decimal] | None = None
     category: str | None = None
     note: str | None = None
 
@@ -59,12 +65,19 @@ class ExpenseUpdate(BaseModel):
     amount: Decimal = Field(gt=0)
     title: str = Field(min_length=1, max_length=160)
     participant_user_ids: list[int] = Field(min_length=1)
+    split_mode: SplitMode = "equal"
+    split_values: dict[int, Decimal] | None = None
     category: str | None = None
     note: str | None = None
 
 
 class ExpenseDelete(BaseModel):
     actor_user_id: int
+
+
+class ExpenseShareOut(BaseModel):
+    user_id: int
+    amount: Decimal
 
 
 class ExpenseOut(BaseModel):
@@ -74,10 +87,18 @@ class ExpenseOut(BaseModel):
     created_by_user_id: int | None = None
     amount: Decimal
     title: str
+    split_mode: str = "equal"
     category: str | None = None
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
+
+
+class ExpenseDetailOut(ExpenseOut):
+    participant_user_ids: list[int]
+    split_values: dict[int, Decimal] | None = None
+    note: str | None = None
+    shares: list[ExpenseShareOut]
 
 
 class ExpenseHistoryItem(BaseModel):
@@ -87,6 +108,7 @@ class ExpenseHistoryItem(BaseModel):
     paid_by_user_id: int
     paid_by_name: str
     created_by_user_id: int | None = None
+    split_mode: str = "equal"
     category: str | None = None
     created_at: datetime
 
