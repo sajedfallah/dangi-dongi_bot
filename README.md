@@ -47,6 +47,7 @@
 - در Production اجرای برنامه با Secretهای پیش‌فرض متوقف می‌شود.
 - Swagger `/docs` در Production غیرفعال است.
 - Docker API را فقط روی `127.0.0.1:8000` publish می‌کند و Bot از شبکه داخلی Compose به آن متصل می‌شود.
+- `run_bot.py` قبل از import کردن Bot، runtime امن Bot را فعال می‌کند تا Service Token فقط در فرایند واقعی Bot تزریق شود و تست‌ها یا Backend تحت تأثیر قرار نگیرند.
 
 ## تنظیمات ضروری
 فایل `.env` باید حداقل مقادیر زیر را داشته باشد:
@@ -68,6 +69,7 @@ API_AUTH_REQUIRED=true
 - `app/bot`: Telegram UX، FSM، اعلان‌ها و deep-link
 - `app/core/api_security.py`: اعتبارسنجی Service Token و Telegram initData
 - `app/core/middleware.py`: Identity binding، Rate Limit و Security Headers
+- `run_bot.py`: launcher امن فرایند Bot
 - `migrations`: نسخه‌بندی و ارتقای دیتابیس با Alembic
 
 ## Migration
@@ -88,9 +90,9 @@ alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-برای Bot:
+برای Bot در یک ترمینال دیگر:
 ```bash
-python -m app.bot.main
+python run_bot.py
 ```
 
 ## تست
