@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "Dongi"
+    app_name: str = "dangi-dongi"
     env: str = "development"
     database_url: str = "sqlite+aiosqlite:///./dongi.db"
     telegram_bot_token: str = ""
