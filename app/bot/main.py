@@ -240,9 +240,7 @@ async def run_bot():
         me = await bot.get_me()
         link = f"https://t.me/{me.username}?start={make_join_payload(group_id)}"
         await callback.answer()
-        await callback.message.answer(
-            f"🔗 لینک امن دعوت «{group['name']}»:\n{link}\n\nاین لینک رو برای اعضای همین حساب بفرست."
-        )
+        await callback.message.answer(f"🔗 لینک امن دعوت «{group['name']}»:\n{link}\n\nاین لینک رو برای اعضای همین حساب بفرست.")
 
     @dp.callback_query(F.data.startswith("members:"))
     async def members(callback: CallbackQuery):
@@ -250,8 +248,9 @@ async def run_bot():
         if not await authorize(callback, group_id):
             return
         items = await get_members(group_id)
+        role_icon = {"owner": " 👑", "admin": " 🛡", "member": ""}
         text = "👥 اعضای حساب:\n\n" + "\n".join(
-            f"• {item['display_name']}{' 👑' if item['role'] == 'owner' else ''}" for item in items
+            f"• {item['display_name']}{role_icon.get(item['role'], '')}" for item in items
         )
         await callback.answer()
         await callback.message.answer(text, reply_markup=group_menu(group_id))
@@ -259,10 +258,11 @@ async def run_bot():
     @dp.callback_query(F.data.startswith("expense:new:"))
     async def expense_start(callback: CallbackQuery, state: FSMContext):
         group_id = int(callback.data.split(":")[2])
-        if not await authorize(callback, group_id):
+        user = await authorize(callback, group_id)
+        if not user:
             return
         await state.clear()
-        await state.update_data(group_id=group_id)
+        await state.update_data(group_id=group_id, actor_user_id=user["id"])
         await state.set_state(ExpenseFlow.waiting_amount)
         await callback.answer()
         await callback.message.answer("💰 مبلغ هزینه رو به تومان وارد کن.\nمثال: 1,250,000\n\nلغو: /cancel")
@@ -333,6 +333,7 @@ async def run_bot():
             return
         async with api_client() as client:
             response = await client.post(f"/api/v1/groups/{data['group_id']}/expenses", json={
+                "actor_user_id": data["actor_user_id"],
                 "paid_by_user_id": data["paid_by_user_id"],
                 "amount": data["amount"],
                 "title": data["title"],
@@ -408,7 +409,10 @@ async def run_bot():
             return
         async with api_client() as client:
             response = await client.post(f"/api/v1/groups/{group_id}/settlements", json={
-                "from_user_id": from_id, "to_user_id": to_id, "amount": amount_raw
+                "actor_user_id": user["id"],
+                "from_user_id": from_id,
+                "to_user_id": to_id,
+                "amount": amount_raw,
             })
             if response.status_code >= 400:
                 await callback.answer("ثبت تسویه انجام نشد.", show_alert=True)
@@ -423,23 +427,77 @@ async def run_bot():
     @dp.callback_query(F.data.startswith("history:"))
     async def history(callback: CallbackQuery):
         group_id = int(callback.data.split(":")[1])
-        if not await authorize(callback, group_id):
+        user = await authorize(callback, group_id)
+        if not user:
             return
+        members_list = await get_members(group_id)
+        current_member = next((m for m in members_list if m["user_id"] == user["id"]), None)
+        can_manage_all = bool(current_member and current_member["role"] in {"owner", "admin"})
         async with api_client() as client:
             response = await client.get(f"/api/v1/groups/{group_id}/expenses", params={"limit": 20})
             response.raise_for_status()
             items = response.json()
-        text = "📜 هنوز هزینه‌ای ثبت نشده." if not items else "📜 ۲۰ هزینه آخر:\n\n" + "\n".join(
-            f"• {x['title']} — {fmt_amount(x['amount'])} تومان — {x['paid_by_name']}" for x in items
+        if not items:
+            await callback.answer()
+            await callback.message.answer("📜 هنوز هزینه‌ای ثبت نشده.", reply_markup=group_menu(group_id))
+            return
+        text = "📜 ۲۰ هزینه آخر:\n\n" + "\n".join(
+            f"• #{x['id']} {x['title']} — {fmt_amount(x['amount'])} تومان — {x['paid_by_name']}" for x in items
         )
+        manage_buttons = []
+        for item in items:
+            if can_manage_all or item.get("created_by_user_id") == user["id"]:
+                manage_buttons.append([InlineKeyboardButton(
+                    text=f"🗑 حذف #{item['id']} {item['title'][:20]}",
+                    callback_data=f"expense:delete_confirm:{group_id}:{item['id']}",
+                )])
+        manage_buttons.append([InlineKeyboardButton(text="⬅️ بازگشت", callback_data=f"group:{group_id}")])
         await callback.answer()
-        await callback.message.answer(text, reply_markup=group_menu(group_id))
+        await callback.message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=manage_buttons))
+
+    @dp.callback_query(F.data.startswith("expense:delete_confirm:"))
+    async def delete_confirm(callback: CallbackQuery):
+        _, _, _, group_raw, expense_raw = callback.data.split(":")
+        group_id, expense_id = int(group_raw), int(expense_raw)
+        if not await authorize(callback, group_id):
+            return
+        await callback.answer()
+        await callback.message.answer(
+            f"⚠️ هزینه #{expense_id} حذف شود؟ این عملیات روی مانده حساب اثر می‌گذارد.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🗑 بله، حذف کن", callback_data=f"expense:delete:{group_id}:{expense_id}")],
+                [InlineKeyboardButton(text="❌ انصراف", callback_data=f"history:{group_id}")],
+            ]),
+        )
+
+    @dp.callback_query(F.data.startswith("expense:delete:"))
+    async def delete_expense(callback: CallbackQuery):
+        _, _, group_raw, expense_raw = callback.data.split(":")
+        group_id, expense_id = int(group_raw), int(expense_raw)
+        user = await authorize(callback, group_id)
+        if not user:
+            return
+        async with api_client() as client:
+            response = await client.request(
+                "DELETE",
+                f"/api/v1/groups/{group_id}/expenses/{expense_id}",
+                json={"actor_user_id": user["id"]},
+            )
+        if response.status_code == 403:
+            await callback.answer("اجازه حذف این هزینه را نداری.", show_alert=True)
+            return
+        if response.status_code >= 400:
+            await callback.answer("حذف هزینه انجام نشد.", show_alert=True)
+            return
+        await callback.answer("حذف شد")
+        await callback.message.answer(f"✅ هزینه #{expense_id} حذف شد و مانده‌ها دوباره محاسبه می‌شوند.", reply_markup=group_menu(group_id))
 
     @dp.message(F.text == "❓ راهنما")
     async def help_message(message: Message):
         await message.answer(
             "۱) حساب بساز.\n۲) لینک دعوت امن رو برای دوستات بفرست.\n۳) هزینه رو ثبت و افراد شریک رو انتخاب کن.\n"
-            "۴) وضعیت حساب طلب/بدهی رو نشون می‌ده.\n۵) بخش تسویه انتقال‌های لازم رو پیشنهاد می‌ده.\n\nلغو عملیات: /cancel"
+            "۴) وضعیت حساب طلب/بدهی رو نشون می‌ده.\n۵) بخش تسویه انتقال‌های لازم رو پیشنهاد می‌ده.\n"
+            "۶) هزینه‌ای که خودت ثبت کردی از تاریخچه قابل حذف است؛ Owner/Admin همه هزینه‌ها را مدیریت می‌کنند.\n\nلغو عملیات: /cancel"
         )
 
     await dp.start_polling(bot)
