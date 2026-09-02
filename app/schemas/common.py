@@ -31,6 +31,11 @@ class MemberAdd(BaseModel):
     user_id: int
 
 
+class MemberRoleUpdate(BaseModel):
+    actor_user_id: int
+    role: str = Field(pattern="^(admin|member)$")
+
+
 class MemberOut(BaseModel):
     user_id: int
     display_name: str
@@ -39,6 +44,7 @@ class MemberOut(BaseModel):
 
 
 class ExpenseCreate(BaseModel):
+    actor_user_id: int
     paid_by_user_id: int
     amount: Decimal = Field(gt=0)
     title: str = Field(min_length=1, max_length=160)
@@ -47,14 +53,30 @@ class ExpenseCreate(BaseModel):
     note: str | None = None
 
 
+class ExpenseUpdate(BaseModel):
+    actor_user_id: int
+    paid_by_user_id: int
+    amount: Decimal = Field(gt=0)
+    title: str = Field(min_length=1, max_length=160)
+    participant_user_ids: list[int] = Field(min_length=1)
+    category: str | None = None
+    note: str | None = None
+
+
+class ExpenseDelete(BaseModel):
+    actor_user_id: int
+
+
 class ExpenseOut(BaseModel):
     id: int
     group_id: int
     paid_by_user_id: int
+    created_by_user_id: int | None = None
     amount: Decimal
     title: str
     category: str | None = None
     created_at: datetime
+    updated_at: datetime
     model_config = {"from_attributes": True}
 
 
@@ -64,11 +86,13 @@ class ExpenseHistoryItem(BaseModel):
     amount: Decimal
     paid_by_user_id: int
     paid_by_name: str
+    created_by_user_id: int | None = None
     category: str | None = None
     created_at: datetime
 
 
 class SettlementCreate(BaseModel):
+    actor_user_id: int
     from_user_id: int
     to_user_id: int
     amount: Decimal = Field(gt=0)
@@ -83,3 +107,14 @@ class TransferSuggestion(BaseModel):
 class BalanceItem(BaseModel):
     user_id: int
     balance: Decimal
+
+
+class AuditLogOut(BaseModel):
+    id: int
+    actor_user_id: int
+    action: str
+    entity_type: str
+    entity_id: int | None = None
+    details: str | None = None
+    created_at: datetime
+    model_config = {"from_attributes": True}
