@@ -1,8 +1,10 @@
 from __future__ import annotations
 from decimal import Decimal, ROUND_HALF_UP
-from sqlalchemy import select
+
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
 from app.models.entities import Expense, ExpenseShare, GroupMember, Settlement
 
 CENT = Decimal("0.01")
@@ -29,19 +31,38 @@ def split_equal(amount: Decimal, participant_ids: list[int]) -> dict[int, Decima
     return result
 
 
-async def create_expense(session: AsyncSession, group_id: int, payload) -> Expense:
+async def validate_expense_members(session: AsyncSession, group_id: int, payer_id: int, participants: list[int]) -> list[int]:
     member_ids = set((await session.execute(
         select(GroupMember.user_id).where(GroupMember.group_id == group_id)
     )).scalars().all())
-    participants = list(dict.fromkeys(payload.participant_user_ids))
-    if payload.paid_by_user_id not in member_ids:
+    participant_ids = list(dict.fromkeys(participants))
+    if payer_id not in member_ids:
         raise ValueError("payer is not a member of this group")
-    if any(uid not in member_ids for uid in participants):
+    if any(uid not in member_ids for uid in participant_ids):
         raise ValueError("all participants must be group members")
+    return participant_ids
 
+
+async def replace_expense_shares(
+    session: AsyncSession,
+    expense_id: int,
+    amount: Decimal,
+    participant_ids: list[int],
+) -> None:
+    await session.execute(delete(ExpenseShare).where(ExpenseShare.expense_id == expense_id))
+    shares = split_equal(q(amount), participant_ids)
+    for user_id, share_amount in shares.items():
+        session.add(ExpenseShare(expense_id=expense_id, user_id=user_id, amount=share_amount))
+
+
+async def create_expense(session: AsyncSession, group_id: int, payload) -> Expense:
+    participants = await validate_expense_members(
+        session, group_id, payload.paid_by_user_id, payload.participant_user_ids
+    )
     expense = Expense(
         group_id=group_id,
         paid_by_user_id=payload.paid_by_user_id,
+        created_by_user_id=payload.actor_user_id,
         amount=q(payload.amount),
         title=payload.title,
         category=payload.category,
@@ -49,10 +70,22 @@ async def create_expense(session: AsyncSession, group_id: int, payload) -> Expen
     )
     session.add(expense)
     await session.flush()
+    await replace_expense_shares(session, expense.id, payload.amount, participants)
+    await session.commit()
+    await session.refresh(expense)
+    return expense
 
-    shares = split_equal(q(payload.amount), participants)
-    for user_id, share_amount in shares.items():
-        session.add(ExpenseShare(expense_id=expense.id, user_id=user_id, amount=share_amount))
+
+async def update_expense(session: AsyncSession, expense: Expense, payload) -> Expense:
+    participants = await validate_expense_members(
+        session, expense.group_id, payload.paid_by_user_id, payload.participant_user_ids
+    )
+    expense.paid_by_user_id = payload.paid_by_user_id
+    expense.amount = q(payload.amount)
+    expense.title = payload.title
+    expense.category = payload.category
+    expense.note = payload.note
+    await replace_expense_shares(session, expense.id, payload.amount, participants)
     await session.commit()
     await session.refresh(expense)
     return expense
