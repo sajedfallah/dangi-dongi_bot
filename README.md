@@ -1,60 +1,90 @@
-# Dongi — Telegram shared-expense platform (MVP)
+# Dongi — Telegram shared-expense platform
 
-نسخه اولیه یک هسته قابل توسعه برای مدیریت هزینه‌های مشترک است.
+ربات مدیریت هزینه‌های مشترک، دونگ و تسویه بین دوستان، هم‌خانه‌ها، سفرها و گروه‌های کوچک.
+
+## وضعیت فعلی
+نسخه فعلی وارد فاز Telegram MVP شده و جریان اصلی استفاده از داخل تلگرام پیاده‌سازی شده است.
 
 ## قابلیت‌های فعلی
-- ایجاد/بازیابی کاربر تلگرام
-- ایجاد حساب/گروه
-- افزودن عضو
-- ثبت هزینه
-- تقسیم مساوی هزینه بین اعضای انتخاب‌شده
-- محاسبه مانده هر عضو
-- پیشنهاد برنامه تسویه با انتقال‌های حداقلی
-- ثبت تسویه
-- اسکلت Telegram Bot با aiogram
-- FastAPI و دیتابیس async
-- SQLite برای توسعه و PostgreSQL برای استقرار
+- ایجاد/بازیابی خودکار کاربر تلگرام
+- ساخت حساب مشترک با واحد تومان (IRT)
+- نمایش «حساب‌های من»
+- ورود به هر حساب از منوی Inline
+- لینک دعوت امضاشده برای جلوگیری از دستکاری شناسه حساب
+- عضویت مستقیم از Telegram deep-link
+- نمایش اعضای حساب
+- ثبت هزینه مرحله‌ای با FSM
+- پشتیبانی از اعداد فارسی/عربی/لاتین در مبلغ
+- انتخاب پرداخت‌کننده از بین اعضا
+- انتخاب چندنفره شرکت‌کنندگان در هر هزینه
+- تقسیم مساوی با مدیریت دقیق اعشار
+- تاریخچه ۲۰ هزینه آخر
+- محاسبه مانده خالص هر عضو
+- نمایش طلبکار/بدهکار
+- پیشنهاد برنامه تسویه با کاهش تعداد انتقال‌ها
+- ثبت تسویه توسط خود بدهکار
+- کنترل دسترسی بات به حساب‌های عضو
+- FastAPI + SQLAlchemy Async
+- SQLite برای Development و PostgreSQL برای Production
+- Docker / Docker Compose
+- تست Unit برای Ledger و لینک دعوت
+- GitHub Actions CI برای compile-check و pytest
 
-## اجرا در حالت توسعه
+## معماری
+- `app/api`: API مشترک برای Telegram Bot / Mini App / Mobile
+- `app/services`: منطق مالی و Ledger مستقل از UI
+- `app/models`: مدل‌های دیتابیس
+- `app/bot`: Telegram UX، FSM و deep-link
+- `app/bot/security.py`: امضای لینک دعوت
+
+## اجرای محلی
 ```bash
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
 pip install -r requirements.txt
 cp .env.example .env
+```
+
+در `.env` حداقل این مقادیر را تنظیم کن:
+```env
+TELEGRAM_BOT_TOKEN=YOUR_BOTFATHER_TOKEN
+APP_SECRET_KEY=USE_A_LONG_RANDOM_SECRET
+```
+
+Backend:
+```bash
 uvicorn app.main:app --reload
+```
+
+Telegram Bot:
+```bash
+python -m app.bot.main
 ```
 
 API docs:
 `http://127.0.0.1:8000/docs`
 
-## اجرای بات
-توکن BotFather را در `.env` قرار بده:
-```env
-TELEGRAM_BOT_TOKEN=...
-```
-سپس:
-```bash
-python -m app.bot.main
-```
-
-## اجرای تست
+## تست
 ```bash
 PYTHONPATH=. pytest -q
+python -m compileall -q app tests
 ```
 
-## معماری
-- `app/api`: API مشترک برای Bot/Mini App/Mobile
-- `app/services`: منطق محاسبات مالی مستقل از UI
-- `app/models`: مدل دیتابیس
-- `app/bot`: رابط Telegram
+## اجرای Docker
+```bash
+docker compose up --build
+```
 
-## برنامه نسخه 0.2
-- لیست حساب‌های کاربر
-- دعوت عضو با لینک امن
-- ثبت کامل هزینه از داخل Bot با FSM و inline keyboard
-- ویرایش/حذف هزینه و Audit Log
-- تقسیم درصدی، سهمی و مبلغ ثابت
-- واحد پول و گردکردن قابل تنظیم
-- گزارش و تاریخچه
-- تسویه با تأیید دوطرفه
-- RBAC مدیر/عضو
+## کارهای باقی‌مانده برای نسخه عمومی
+- ویرایش/حذف هزینه + Audit Log
+- نقش‌ها و Permission کامل owner/admin/member
+- تقسیم نامساوی: درصدی، سهمی و مبلغ ثابت
+- تأیید دوطرفه تسویه
+- اعلان هوشمند اعضا پس از ثبت/ویرایش هزینه
+- صفحه‌بندی تاریخچه
+- دسته‌بندی و گزارش هزینه
+- Migration رسمی با Alembic
+- API authentication/Telegram WebApp auth
+- Rate limiting و hardening عمومی API
+- تست Integration و E2E
+- Telegram Mini App
