@@ -3,7 +3,7 @@
 ربات مدیریت هزینه‌های مشترک، دونگ و تسویه بین دوستان، هم‌خانه‌ها، سفرها و گروه‌های کوچک.
 
 ## وضعیت فعلی
-نسخه فعلی در فاز Telegram MVP قرار دارد. هسته مالی، RBAC، Audit Log، Migration دیتابیس، تقسیم حرفه‌ای هزینه، ویرایش هزینه، تسویه دوطرفه و اعلان اعضای مرتبط پیاده‌سازی شده‌اند.
+نسخه فعلی در فاز Telegram MVP قرار دارد. هسته مالی، RBAC، Audit Log، Migration دیتابیس، تقسیم حرفه‌ای هزینه، ویرایش هزینه، تسویه دوطرفه، اعلان اعضا و hardening اولیه API پیاده‌سازی شده‌اند.
 
 ## قابلیت‌های فعلی
 - ایجاد/بازیابی خودکار کاربر تلگرام
@@ -20,32 +20,54 @@
 - تاریخچه ۲۰ هزینه آخر
 - ویرایش مبلغ، عنوان و مدل تقسیم از داخل Telegram
 - حذف هزینه با تأیید
-- اعلان ثبت/ویرایش هزینه برای اعضای مرتبط دارای Telegram ID
-- عضو عادی فقط هزینه ثبت‌شده توسط خودش را مدیریت می‌کند
-- Owner/Admin امکان مدیریت همه هزینه‌ها را دارند
-- Owner می‌تواند نقش member/admin را تغییر دهد
-- Audit Log برای ایجاد/ویرایش/حذف هزینه، درخواست/تأیید/رد تسویه، عضویت و تغییر نقش
-- Audit Log فقط برای Owner/Admin قابل مشاهده است
+- اعلان ثبت/ویرایش هزینه برای اعضای مرتبط
+- Owner/Admin و RBAC در سطح Backend
+- Audit Log برای عملیات حساس
 - محاسبه مانده خالص هر عضو
 - پیشنهاد برنامه تسویه با کاهش تعداد انتقال‌ها
-- تسویه دوطرفه: بدهکار درخواست ثبت می‌کند و طلبکار باید دریافت را تأیید کند
-- Settlementهای `pending` و `rejected` هیچ اثری روی Balance ندارند
-- فقط Settlement با وضعیت `confirmed` وارد محاسبات مانده می‌شود
-- اعلان مستقیم درخواست تسویه به طلبکار با دکمه‌های تأیید/رد
+- تسویه دوطرفه با وضعیت `pending/confirmed/rejected`
+- فقط Settlement تأییدشده وارد Balance می‌شود
+- اعلان مستقیم درخواست تسویه به طلبکار با دکمه تأیید/رد
 - بخش «تسویه‌های منتظر» داخل Telegram
 - FastAPI + SQLAlchemy Async
 - SQLite برای Development و PostgreSQL برای Production
 - Alembic migrations برای ارتقای schema
 - Docker / Docker Compose
-- Unit + Integration tests
+- Unit + Integration + authenticated multi-user E2E tests
 - GitHub Actions CI برای compile-check و pytest
+
+## امنیت API
+- Bot برای ارتباط با Backend از `SERVICE_API_TOKEN` مستقل استفاده می‌کند.
+- APIهای `/api/v1/*` بدون احراز هویت در حالت عادی پاسخ `401` می‌دهند.
+- Telegram Mini App می‌تواند `X-Telegram-Init-Data` اصلی Telegram را ارسال کند؛ امضای HMAC، `auth_date` و هویت User روی Backend اعتبارسنجی می‌شوند.
+- هویت Telegram به User داخلی bind می‌شود؛ جعل `actor_user_id`، `owner_user_id` یا `user_id` کاربر دیگر با `403` رد می‌شود.
+- دسترسی به Group برای درخواست‌های Telegram با membership واقعی کنترل می‌شود.
+- Rate limiting برای Clientهای غیرسرویسی فعال است و پاسخ `429` همراه `Retry-After` برمی‌گرداند.
+- Headerهای `nosniff`, `DENY`, `no-referrer` و `no-store` روی پاسخ‌های API اعمال می‌شوند.
+- در Production اجرای برنامه با Secretهای پیش‌فرض متوقف می‌شود.
+- Swagger `/docs` در Production غیرفعال است.
+- Docker API را فقط روی `127.0.0.1:8000` publish می‌کند و Bot از شبکه داخلی Compose به آن متصل می‌شود.
+
+## تنظیمات ضروری
+فایل `.env` باید حداقل مقادیر زیر را داشته باشد:
+```env
+ENV=production
+TELEGRAM_BOT_TOKEN=...
+APP_SECRET_KEY=...
+SERVICE_API_TOKEN=...
+POSTGRES_PASSWORD=...
+API_AUTH_REQUIRED=true
+```
+
+`APP_SECRET_KEY` و `SERVICE_API_TOKEN` باید دو مقدار تصادفی، بلند و متفاوت باشند.
 
 ## معماری
 - `app/api`: API مشترک برای Telegram Bot / Mini App / Mobile
 - `app/services`: منطق مالی و Ledger مستقل از UI
 - `app/models`: مدل‌های دیتابیس
 - `app/bot`: Telegram UX، FSM، اعلان‌ها و deep-link
-- `app/bot/security.py`: امضای لینک دعوت
+- `app/core/api_security.py`: اعتبارسنجی Service Token و Telegram initData
+- `app/core/middleware.py`: Identity binding، Rate Limit و Security Headers
 - `migrations`: نسخه‌بندی و ارتقای دیتابیس با Alembic
 
 ## Migration
@@ -56,7 +78,7 @@ alembic upgrade head
 
 Migration `0004_two_party_settlements` وضعیت `pending/confirmed/rejected` و زمان پاسخ تسویه را اضافه می‌کند. Settlementهای قدیمی هنگام ارتقا `confirmed` باقی می‌مانند تا رفتار مالی قبلی تغییر نکند.
 
-## اجرا
+## اجرای توسعه
 ```bash
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\\Scripts\\activate
@@ -77,15 +99,17 @@ PYTHONPATH=. pytest -q
 python -m compileall -q app tests migrations
 ```
 
-## Docker
+## Docker Production
+پس از تنظیم `.env`:
 ```bash
-docker compose up --build
+docker compose up --build -d
 ```
 
+API و Bot هر دو توسط Compose اجرا می‌شوند و از `SERVICE_API_TOKEN` یکسان برای ارتباط داخلی استفاده می‌کنند.
+
 ## کارهای باقی‌مانده برای نسخه عمومی
-- Telegram WebApp/API authentication واقعی؛ `actor_user_id` فعلی Authentication محسوب نمی‌شود
-- Rate limiting و hardening عمومی API
+- E2E واقعی با دو حساب Telegram و BotFather روی محیط Staging
 - صفحه‌بندی تاریخچه و گزارش‌های دسته‌بندی‌شده
-- E2E تست واقعی Telegram با چند حساب کاربری
-- مدیریت Notification preferences / mute
+- Notification preferences / mute
+- Reverse proxy + TLS برای Mini App/API عمومی
 - Telegram Mini App
