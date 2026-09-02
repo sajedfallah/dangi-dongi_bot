@@ -50,6 +50,11 @@
 - `run_bot.py` قبل از import کردن Bot، runtime امن Bot را فعال می‌کند تا Service Token فقط در فرایند واقعی Bot تزریق شود و تست‌ها یا Backend تحت تأثیر قرار نگیرند.
 
 ## تنظیمات ضروری
+برای Staging از الگوی `.env.staging.example` استفاده کن:
+```bash
+cp .env.staging.example .env
+```
+
 فایل `.env` باید حداقل مقادیر زیر را داشته باشد:
 ```env
 ENV=production
@@ -60,7 +65,7 @@ POSTGRES_PASSWORD=...
 API_AUTH_REQUIRED=true
 ```
 
-`APP_SECRET_KEY` و `SERVICE_API_TOKEN` باید دو مقدار تصادفی، بلند و متفاوت باشند.
+`APP_SECRET_KEY` و `SERVICE_API_TOKEN` باید دو مقدار تصادفی، بلند و متفاوت باشند. توکن BotFather و Secretها نباید Commit شوند.
 
 ## معماری
 - `app/api`: API مشترک برای Telegram Bot / Mini App / Mobile
@@ -101,6 +106,36 @@ PYTHONPATH=. pytest -q
 python -m compileall -q app tests migrations
 ```
 
+## Staging با Docker
+پس از Clone کردن Repository روی سرور:
+```bash
+cp .env.staging.example .env
+# مقادیر واقعی TELEGRAM_BOT_TOKEN / APP_SECRET_KEY / SERVICE_API_TOKEN / POSTGRES_PASSWORD را وارد کن
+docker compose up --build -d
+docker compose ps
+docker compose logs --tail=100 api
+docker compose logs --tail=100 bot
+```
+
+Smoke Test امنیت و API:
+```bash
+export SERVICE_API_TOKEN='همان مقدار داخل .env'
+python scripts/staging_smoke.py
+```
+
+خروجی موفق باید شامل `STAGING_SMOKE_OK` باشد.
+
+## سناریوی تست واقعی دو حساب Telegram
+1. حساب A روی Bot دستور `/start` را اجرا کند و یک حساب مشترک مثل «تست سفر» بسازد.
+2. از «🔗 دعوت عضو» لینک دعوت گرفته شود و حساب B با همان لینک عضو شود.
+3. حساب A یک هزینه 100,000 تومانی ثبت کند، پرداخت‌کننده A باشد و هزینه بین A و B مساوی تقسیم شود.
+4. «📊 وضعیت حساب» باید A را 50,000 تومان طلبکار و B را 50,000 تومان بدهکار نشان دهد.
+5. حساب B از «💳 تسویه» گزینه پرداخت به A را بزند.
+6. قبل از تأیید A، Balance نباید تغییر کند و Settlement باید pending باشد.
+7. حساب A پیام دریافت را با «✅ تأیید دریافت» تأیید کند.
+8. پس از تأیید، Balance هر دو باید صفر شود.
+9. یک هزینه دیگر با تقسیم درصدی یا سهمی ثبت و سپس ویرایش/حذف شود تا اعلان‌ها و RBAC هم بررسی شوند.
+
 ## Docker Production
 پس از تنظیم `.env`:
 ```bash
@@ -110,7 +145,7 @@ docker compose up --build -d
 API و Bot هر دو توسط Compose اجرا می‌شوند و از `SERVICE_API_TOKEN` یکسان برای ارتباط داخلی استفاده می‌کنند.
 
 ## کارهای باقی‌مانده برای نسخه عمومی
-- E2E واقعی با دو حساب Telegram و BotFather روی محیط Staging
+- اجرای E2E واقعی با دو حساب Telegram روی محیط Staging و ثبت باگ‌های UX
 - صفحه‌بندی تاریخچه و گزارش‌های دسته‌بندی‌شده
 - Notification preferences / mute
 - Reverse proxy + TLS برای Mini App/API عمومی
