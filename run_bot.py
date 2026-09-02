@@ -5,8 +5,10 @@ os.environ["DANGI_BOT_PROCESS"] = "1"
 
 import app.bot.final_main as final_main  # noqa: E402
 from app.bot.ux_runtime import install as install_ux  # noqa: E402
+from app.bot.advanced_expense_runtime import install as install_advanced_expense  # noqa: E402
 
 install_ux(final_main)
+install_advanced_expense(final_main)
 
 
 if __name__ == "__main__":
