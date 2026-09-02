@@ -120,6 +120,22 @@ class SettlementCreate(BaseModel):
     amount: Decimal = Field(gt=0)
 
 
+class SettlementAction(BaseModel):
+    actor_user_id: int
+
+
+class SettlementOut(BaseModel):
+    id: int
+    group_id: int
+    from_user_id: int
+    to_user_id: int
+    amount: Decimal
+    status: str
+    created_at: datetime
+    responded_at: datetime | None = None
+    model_config = {"from_attributes": True}
+
+
 class TransferSuggestion(BaseModel):
     from_user_id: int
     to_user_id: int
