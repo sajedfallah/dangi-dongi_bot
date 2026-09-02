@@ -15,10 +15,11 @@ def _has_button(markup: InlineKeyboardMarkup | None, text: str) -> bool:
     return any(button.text == text for row in markup.inline_keyboard for button in row)
 
 
-def _with_nav(markup: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup | None:
-    if markup is None:
-        return None
-    rows = [list(row) for row in markup.inline_keyboard]
+def _with_nav(markup: InlineKeyboardMarkup | None) -> InlineKeyboardMarkup:
+    # Every non-main bot panel must have a way out.  Previously, messages that
+    # did not define an inline keyboard (for example the invite-link panel)
+    # became dead ends after Clean-Chat removed the previous panel.
+    rows = [list(row) for row in markup.inline_keyboard] if markup else []
     nav = []
     if not _has_button(markup, "⬅️ برگشت") and not _has_button(markup, "⬅️ بازگشت"):
         nav.append(InlineKeyboardButton(text="⬅️ برگشت", callback_data="ux:back"))
@@ -71,6 +72,10 @@ def install(module) -> None:
         markup = kwargs.get("reply_markup")
         if isinstance(markup, InlineKeyboardMarkup):
             kwargs["reply_markup"] = _with_nav(markup)
+        elif markup is None:
+            # Text-only prompts still need deterministic navigation.  Do not
+            # override ReplyKeyboardMarkup (the persistent main keyboard).
+            kwargs["reply_markup"] = _with_nav(None)
 
         result = await original_answer(self, text, *args, **kwargs)
         _LAST_PANEL[chat_id] = result.message_id
