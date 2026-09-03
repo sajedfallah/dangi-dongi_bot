@@ -10,6 +10,7 @@ from app.bot.join_notification_runtime import install as install_join_notificati
 from app.bot.reminder_cadence_runtime import install as install_reminder_cadence  # noqa: E402
 from app.bot.v11_runtime import install as install_v11  # noqa: E402
 from app.bot.onboarding_runtime import install as install_onboarding  # noqa: E402
+from app.bot.miniapp_runtime import install as install_miniapp  # noqa: E402
 
 install_ux(final_main)
 install_advanced_expense(final_main)
@@ -17,6 +18,7 @@ install_join_notifications(final_main)
 install_reminder_cadence(final_main)
 install_v11(final_main)
 install_onboarding(final_main)
+install_miniapp(final_main)
 
 
 if __name__ == "__main__":
