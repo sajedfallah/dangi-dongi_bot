@@ -59,7 +59,7 @@ function demoExpenseReport(groupId: number) {
 }
 
 function demoDebtReport(groupId: number) {
-  if (groupId === 102) return { balances: [], transfers: [] }
+  if (groupId !== 101) return { balances: [], transfers: [] }
   return {
     balances: [
       { user_id: 1, display_name: 'ساجد', balance: '2450000', status: 'creditor' },
@@ -95,7 +95,28 @@ export async function ensureUser(): Promise<User> {
 
 export const api = {
   groups: async (userId: number) => DEMO_MODE ? structuredClone(demoGroups) : request<Group[]>(`/api/v1/dashboard/users/${userId}/groups`),
-  summary: async (userId: number) => DEMO_MODE ? ({ owned_active_groups: 2, total_memberships: 2, free_owned_group_limit: 2, remaining_free_groups: 0 }) : request<any>(`/api/v1/dashboard/users/${userId}/summary`),
+  createGroup: async (ownerUserId: number, name: string, currency = 'IRR') => {
+    if (DEMO_MODE) {
+      const group: Group = {
+        id: Math.max(102, ...demoGroups.map(g => g.id)) + 1,
+        name,
+        raw_name: name,
+        role: 'owner',
+        owner_user_id: ownerUserId,
+        currency,
+      }
+      demoGroups.unshift(group)
+      demoMembers[group.id] = [{ user_id: ownerUserId, display_name: demoUser.display_name, role: 'owner' }]
+      demoExpenses[group.id] = []
+      return structuredClone(group)
+    }
+    const group = await request<Group>('/api/v1/groups', {
+      method: 'POST',
+      body: JSON.stringify({ name, owner_user_id: ownerUserId, currency }),
+    })
+    return { ...group, raw_name: group.name, role: 'owner' }
+  },
+  summary: async (userId: number) => DEMO_MODE ? ({ owned_active_groups: demoGroups.length, total_memberships: demoGroups.length, free_owned_group_limit: 2, remaining_free_groups: Math.max(0, 2 - demoGroups.length) }) : request<any>(`/api/v1/dashboard/users/${userId}/summary`),
   group: async (id: number) => DEMO_MODE ? structuredClone(demoGroups.find(g => g.id === id)!) : request<Group>(`/api/v1/groups/${id}`),
   members: async (id: number) => DEMO_MODE ? structuredClone(demoMembers[id] || []) : request<Member[]>(`/api/v1/groups/${id}/members`),
   expenses: async (id: number) => DEMO_MODE ? structuredClone(demoExpenses[id] || []) : request<Expense[]>(`/api/v1/groups/${id}/expenses?limit=20`),
