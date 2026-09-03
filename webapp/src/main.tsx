@@ -5,6 +5,7 @@ import './styles.css'
 import './hero-illustration.css'
 import './hero-art.css'
 import './onboarding-v3.css'
+import './create-group.css'
 import { initTelegram } from './telegram'
 
 initTelegram()
