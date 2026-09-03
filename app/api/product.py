@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.bot.security import make_join_payload
 from app.db.session import get_db
 from app.models.entities import AuditLog, DebtReminderState, Expense, ExpenseShare, Group, GroupMember, Settlement, User
 from app.services.ledger import calculate_balances, simplify_debts
@@ -75,6 +76,19 @@ def _distribute(total: Decimal, weights: list[Decimal]) -> list[Decimal]:
     remainder = total - sum(amounts)
     amounts[0] += remainder
     return amounts
+
+
+@router.get("/groups/{group_id}/invite")
+async def group_invite(group_id: int, actor_user_id: int, db: AsyncSession = Depends(get_db)):
+    await _member(db, group_id, actor_user_id)
+    group = await db.get(Group, group_id)
+    if not group:
+        raise HTTPException(404, "group not found")
+    return {
+        "group_id": group.id,
+        "group_name": group.name,
+        "start_parameter": make_join_payload(group.id),
+    }
 
 
 @router.get("/users/{user_id}/payment-profile")
