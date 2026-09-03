@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" role="img" aria-labelledby="title desc">
+  <title id="title">دنگی دونگی - دوستان در سفر</title>
+  <desc id="desc">تصویرسازی گرم از چهار دوست در کنار هم برای معرفی دنگی دونگی</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#ffd9d3"/><stop offset=".58" stop-color="#f9bfd0"/><stop offset="1" stop-color="#dba7cf"/></linearGradient>
+    <linearGradient id="sun" x1="0" x2="1"><stop stop-color="#ffd56d"/><stop offset="1" stop-color="#ff9974"/></linearGradient>
+    <linearGradient id="shirt1" x1="0" x2="1"><stop stop-color="#ff765c"/><stop offset="1" stop-color="#ffab72"/></linearGradient>
+    <linearGradient id="shirt2" x1="0" x2="1"><stop stop-color="#7e6791"/><stop offset="1" stop-color="#b77ca6"/></linearGradient>
+    <linearGradient id="table" x1="0" x2="1"><stop stop-color="#ffd6a3"/><stop offset="1" stop-color="#f5a06c"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%"><feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#875865" flood-opacity=".2"/></filter>
+  </defs>
+  <rect width="760" height="420" rx="38" fill="url(#sky)"/>
+  <circle cx="608" cy="76" r="48" fill="url(#sun)" opacity=".9"/>
+  <g fill="#fff" opacity=".36"><ellipse cx="115" cy="72" rx="72" ry="23"/><ellipse cx="166" cy="91" rx="56" ry="18"/></g>
+  <g fill="#614d68" opacity=".6"><path d="M30 348c54-96 110-97 158-2z"/><path d="M557 350c46-97 111-96 168 0z"/></g>
+  <g fill="#604c62"><path d="M64 312c9-83 28-125 46-133 17 11 29 45 32 99h-11c-3-37-10-62-20-76-9 21-14 58-16 110z"/><path d="M663 310c-4-79 7-122 29-139 20 12 34 52 38 107h-12c-5-41-14-68-27-82-10 22-15 60-15 114z"/></g>
+  <g filter="url(#shadow)"><ellipse cx="380" cy="333" rx="245" ry="43" fill="#e9875e"/><ellipse cx="380" cy="323" rx="231" ry="35" fill="url(#table)"/></g>
+  <g filter="url(#shadow)">
+    <circle cx="216" cy="185" r="45" fill="#f2ad8b"/><path d="M174 181c4-49 77-66 89-11 4 18 0 37-5 49-7-34-20-45-45-44-17 1-28 5-39 6z" fill="#4b3a48"/><path d="M176 240c20-39 82-41 101 4l12 58H163z" fill="url(#shirt1)"/><circle cx="202" cy="184" r="3.5" fill="#35262b"/><circle cx="234" cy="184" r="3.5" fill="#35262b"/><path d="M207 202c9 7 19 7 27 0" fill="none" stroke="#b85e5e" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="326" cy="176" r="48" fill="#d68c70"/><path d="M278 172c5-47 27-67 57-59 31 7 47 36 34 80-5-31-20-44-45-45-20-1-34 8-46 24z" fill="#332a31"/><path d="M283 237c21-42 89-43 109 5l8 60H272z" fill="url(#shirt2)"/><circle cx="310" cy="177" r="3.5" fill="#281e22"/><circle cx="344" cy="177" r="3.5" fill="#281e22"/><path d="M315 198c9 7 18 7 27 0" fill="none" stroke="#9e574c" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="443" cy="183" r="45" fill="#efb18d"/><path d="M400 180c2-47 20-68 51-65 31 2 50 31 40 71-11-22-25-32-45-33-20 0-33 8-46 27z" fill="#623936"/><path d="M401 242c24-41 80-40 99 2l12 58H389z" fill="#f0bf5a"/><circle cx="428" cy="182" r="3.5" fill="#332627"/><circle cx="458" cy="182" r="3.5" fill="#332627"/><path d="M432 201c8 7 17 7 25 0" fill="none" stroke="#b3615f" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="553" cy="186" r="46" fill="#b9785d"/><path d="M508 176c2-40 20-61 48-62 29 0 49 24 47 63-14-17-31-25-49-25-18 0-32 9-46 24z" fill="#2e2931"/><path d="M507 244c22-40 81-40 102 2l9 56H497z" fill="#eb7767"/><circle cx="537" cy="186" r="3.5" fill="#20191a"/><circle cx="569" cy="186" r="3.5" fill="#20191a"/><path d="M541 207c9 6 18 6 26 0" fill="none" stroke="#824f47" stroke-width="3.5" stroke-linecap="round"/>
+  </g>
+  <g fill="#fff1df"><rect x="247" y="294" width="52" height="32" rx="11"/><rect x="468" y="292" width="52" height="34" rx="11"/></g>
+  <g fill="#ff8a64"><circle cx="273" cy="292" r="13"/><circle cx="494" cy="290" r="13"/></g>
+</svg>
