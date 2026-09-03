@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./dongi.db"
     telegram_bot_token: str = ""
     api_base_url: str = "http://127.0.0.1:8000"
+    mini_app_url: str = ""
     app_secret_key: str = "change-me-in-production"
     service_api_token: str = "change-me-service-token"
     api_auth_required: bool = True
