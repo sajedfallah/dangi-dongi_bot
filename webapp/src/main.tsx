@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles.css'
 import './hero-illustration.css'
+import './hero-art.css'
 import { initTelegram } from './telegram'
 
 initTelegram()
