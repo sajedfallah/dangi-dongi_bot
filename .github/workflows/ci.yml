@@ -22,3 +22,20 @@ jobs:
         env:
           PYTHONPATH: .
         run: pytest -q
+
+  miniapp:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webapp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: webapp/package.json
+      - name: Install Mini App dependencies
+        run: npm install
+      - name: Build Mini App
+        run: npm run build
