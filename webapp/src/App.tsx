@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import {
-  Bell, ChevronLeft, CircleUserRound, Home, LockKeyhole, PieChart, Plus,
-  ReceiptText, Settings, ShieldCheck, Sparkles, Users, WalletCards, Zap
+  BarChart3, Bell, BookOpen, ChevronLeft, CircleUserRound, Clock3, Eye, Globe2,
+  Home, LockKeyhole, LogIn, PieChart, Play, Plus, ReceiptText, Settings,
+  ShieldCheck, Sparkles, Users, UserRoundPlus, WalletCards, Zap
 } from 'lucide-react'
 import { api, ensureUser, Expense, Group, Member, User } from './api'
 import { haptic, telegramUser } from './telegram'
@@ -37,7 +38,7 @@ export default function App() {
         setUser(me)
         const list = await api.groups(me.id)
         setGroups(list)
-        setShowGuest(!list.length)
+        setShowGuest(isLocalDemo() || !list.length)
       } catch (e) {
         if (isLocalDemo()) setShowGuest(true)
         else setError(e instanceof Error ? e.message : 'خطا در اتصال به دنگی دونگی')
@@ -83,32 +84,66 @@ export default function App() {
 
 function GuestLanding({onExplore,hasDemo}:{onExplore:()=>void;hasDemo:boolean}){
   const [step,setStep]=useState(1)
-  return <div className="guest-page warm-bg"><main className="guest-shell">
-    <section className="guest-hero soft-card">
-      <div className="guest-badge"><Sparkles size={16}/> بدون ثبت‌نام امتحانش کنید</div>
-      <div className="brand-orb"><Users/></div>
-      <h1>دنگی دونگی</h1>
-      <p>مدیریت هزینه‌های گروهی، ساده، شفاف و بدون تنش</p>
-      <div className="people-illustration"><span>👩🏻</span><span>👨🏻</span><span>👩🏽</span><span>👨🏽</span></div>
-    </section>
+  return <div className="landing-v3 warm-bg">
+    <header className="landing-v3-head">
+      <div className="landing-brand"><div className="brand-orb"><Users/></div><div><h1>دنگی دونگی</h1><p>مدیریت هزینه‌های گروهی، ساده، شفاف و لذت‌بخش</p></div></div>
+      <div className="landing-tools"><button className="landing-chip"><Sparkles size={17}/> حالت دمو</button><button className="landing-chip"><Globe2 size={17}/> فارسی</button></div>
+    </header>
 
-    <section className="soft-card intro-card"><h2>چرا دنگی دونگی؟</h2><div className="feature-grid">
-      <Feature icon={<ReceiptText/>} title="ثبت سریع" text="هزینه‌ها را در چند ثانیه ثبت کن" tone="coral"/>
-      <Feature icon={<Users/>} title="تقسیم عادلانه" text="سهم هر نفر را دقیق محاسبه کن" tone="gold"/>
-      <Feature icon={<PieChart/>} title="گزارش هوشمند" text="همیشه تصویر روشنی از خرج‌ها داشته باش" tone="violet"/>
-      <Feature icon={<WalletCards/>} title="تسویه آسان" text="بدهی‌ها را بدون سردرگمی ببند" tone="pink"/>
-    </div></section>
+    <main className="landing-v3-grid">
+      <section className="landing-hero-panel soft-card">
+        <div className="landing-copy">
+          <span className="eyebrow">مدیریت پول بین دوستان، بدون دردسر</span>
+          <h2>باهم راحت‌تر حساب کنیم،<strong> رابطه‌ها رو قوی‌تر کنیم 💞</strong></h2>
+          <p>دیگه نیازی به ماشین حساب، دفترچه یا پیام‌های تکراری نیست؛ همه‌چیز شفاف، مرتب و همیشه در دسترسه.</p>
+        </div>
+        <div className="people-illustration"><span>👩🏻</span><span>👨🏻</span><span>👩🏽</span><span>👨🏽</span></div>
+        <div className="landing-cta-row">
+          <button className="secondary-neu"><LogIn/> ورود به حساب<small>قبلاً حساب دارم</small></button>
+          <button className="primary-neu landing-main-cta"><UserRoundPlus/> ایجاد حساب رایگان<small>شروع در چند ثانیه</small></button>
+          <button className="secondary-neu" onClick={onExplore}><Play/> ادامه بدون ثبت‌نام<small>مشاهده دمو</small></button>
+        </div>
+        <div className="landing-hint"><Sparkles size={16}/> همین حالا بدون ثبت‌نام، امکانات دنگی دونگی رو امتحان کن!</div>
+      </section>
 
-    <section className="soft-card checklist-card"><div className="section-head"><h3>شروع در ۳ مرحله ساده</h3><span>{step}/3</span></div><div className="steps">
-      {[['۱','ایجاد حساب'],['۲','دعوت اعضا'],['۳','ثبت هزینه‌ها']].map((x,i)=><button key={x[0]} className={`step-item ${step===i+1?'active':''} ${step>i+1?'done':''}`} onClick={()=>setStep(i+1)}><span>{step>i+1?'✓':x[0]}</span><b>{x[1]}</b></button>)}
-    </div><div className="progress-track"><i style={{width:`${step/3*100}%`}}/></div></section>
+      <section className="landing-side">
+        <div className="landing-features soft-card">
+          <Feature icon={<Clock3/>} title="عملیات سریع" text="دسترسی آسان به تمام قابلیت‌ها" tone="violet"/>
+          <Feature icon={<Users/>} title="تقسیم عادلانه" text="هزینه‌ها خودکار و شفاف تقسیم می‌شوند" tone="coral"/>
+          <Feature icon={<BarChart3/>} title="گزارش‌های دقیق" text="نمایش آمار و گزارش‌های تصویری" tone="blue"/>
+          <Feature icon={<ShieldCheck/>} title="یادآوری هوشمند" text="یادآوری بدهی‌ها و رسید پرداخت" tone="gold"/>
+          <Feature icon={<LockKeyhole/>} title="امن و خصوصی" text="اطلاعات فقط بین اعضا باقی می‌ماند" tone="pink"/>
+        </div>
 
-    <section className="demo-panel soft-card"><div><small>دموی تعاملی</small><h3>قبل از شروع، خودت تجربه‌اش کن</h3><p>یک حساب نمونه با هزینه، اعضا، گزارش و تسویه آماده است.</p></div><button className="secondary-neu" onClick={onExplore}>شروع دمو</button></section>
+        <div className="landing-side-bottom">
+          <section className="demo-explorer soft-card">
+            <div className="demo-title"><span><Sparkles/> اکسپلور دمو</span><small>قبل از ثبت‌نام، با دمو آشنا شو!</small></div>
+            <div className="demo-phone">
+              <div className="demo-phone-top"><b>سفر شمال 🌴</b><span>👨🏻 👩🏻 👨🏽</span></div>
+              <div className="demo-balance"><small>وضعیت کلی شما</small><strong>۲,۴۵۰,۰۰۰</strong><em>طلبکار هستید</em></div>
+              <div className="demo-expenses"><div><span>🍽</span><b>شام رستوران</b><strong>۱,۸۵۰,۰۰۰</strong></div><div><span>🚕</span><b>تاکسی</b><strong>۴۲۰,۰۰۰</strong></div></div>
+              <button className="primary-neu demo-watch" onClick={onExplore}><Eye/> مشاهده دمو</button>
+            </div>
+          </section>
 
-    <section className="cta-stack"><button className="primary-neu"><Plus/> ایجاد حساب رایگان</button><button className="secondary-neu">ورود به حساب</button>{hasDemo&&<button className="text-btn" onClick={onExplore}>ادامه بدون ثبت‌نام (دمو)</button>}</section>
+          <section className="steps-v3 soft-card">
+            <div className="steps-v3-title"><BookOpen/><h3>مسیر شروع در ۳ مرحله</h3></div>
+            {[
+              ['۱','ایجاد گروه','یک گروه بساز و دوستات رو اضافه کن'],
+              ['۲','ثبت هزینه‌ها','هزینه‌ها رو ثبت کن و دسته‌بندی کن'],
+              ['۳','تسویه و گزارش','گزارش بگیر و بین اعضا تسویه کن'],
+            ].map((x,i)=><button key={x[0]} className={`step-v3 ${step===i+1?'active':''}`} onClick={()=>setStep(i+1)}><span>{x[0]}</span><div><b>{x[1]}</b><small>{x[2]}</small></div><i>{i===0?<Users/>:i===1?<WalletCards/>:<PieChart/>}</i></button>)}
+          </section>
+        </div>
+      </section>
+    </main>
 
-    <section className="trust-row"><div><Zap/><span>سریع</span></div><div><ShieldCheck/><span>امن</span></div><div><LockKeyhole/><span>خصوصی</span></div></section>
-  </main></div>
+    <footer className="landing-footer soft-card">
+      <div className="landing-trust"><ShieldCheck/><div><b>اطمینان کامل از امنیت اطلاعات شما</b><small>تمام داده‌ها با استانداردهای امنیتی محافظت می‌شوند.</small></div></div>
+      <nav className="landing-mini-nav"><button className="active"><Home/> خانه</button><button><ReceiptText/> حساب‌ها</button><button className="footer-fab" onClick={onExplore}><Plus/></button><button><BarChart3/> گزارش‌ها</button><button><CircleUserRound/> پروفایل</button></nav>
+      {hasDemo&&<span className="demo-status">دمو آماده است</span>}
+    </footer>
+  </div>
 }
 
 function Feature({icon,title,text,tone}:{icon:any;title:string;text:string;tone:string}){return <div className="feature-item"><span className={`feature-icon ${tone}`}>{icon}</span><b>{title}</b><small>{text}</small></div>}
