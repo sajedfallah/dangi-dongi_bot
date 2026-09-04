@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.dashboard import router as dashboard_router
 from app.api.group_management import router as group_management_router
@@ -32,6 +33,18 @@ app = FastAPI(
     docs_url="/docs" if settings.env == "development" else None,
     redoc_url=None,
 )
+
+if settings.cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "X-Telegram-Init-Data"],
+        expose_headers=["Retry-After"],
+        max_age=600,
+    )
+
 app.add_middleware(SecurityMiddleware)
 app.include_router(router)
 app.include_router(dashboard_router)
